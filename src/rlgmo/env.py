@@ -109,6 +109,8 @@ class TradingEnv:
         self.observation_dim = self._feats.shape[1] + ACCOUNT_FEATURES
         self._rng = np.random.default_rng()
         self._target_vol_bar = self.cfg.reward.target_vol_ann / np.sqrt(BARS_PER_YEAR)
+        # コストカリキュラム用の倍率（学習序盤だけコストを軽くする。詳細は agents/ppo.py）
+        self.cost_scale = 1.0
         self.reset()
 
     # ------------------------------------------------------------------ API
@@ -174,7 +176,7 @@ class TradingEnv:
         else:
             target_notional = desired_notional
             traded = desired_notional - marked_prev
-        rate = float(effective_trade_rate(cfg.cost, self._vol_ratio[t + 1])) * self._cost_jitter
+        rate = float(effective_trade_rate(cfg.cost, self._vol_ratio[t + 1])) * self._cost_jitter * self.cost_scale
         trade_cost = abs(traded) * rate
 
         # --- 損益: ギャップ（旧ポジション）+ イントラバー（新ポジション）
@@ -183,7 +185,9 @@ class TradingEnv:
         pnl = prev_notional * r_gap + target_notional * r_intra
 
         # --- 建玉管理料（JST 06:00 課金）
-        carry_cost = abs(target_notional) * carry_rate_per_bar(cfg.cost, 1, bool(self._carry[t + 1]))
+        carry_cost = (
+            abs(target_notional) * carry_rate_per_bar(cfg.cost, 1, bool(self._carry[t + 1])) * self.cost_scale
+        )
 
         prev_equity = self.equity
         self.equity = max(prev_equity + pnl - trade_cost - carry_cost, 1e-9)
@@ -309,6 +313,11 @@ class SyncVectorEnv:
         self.num_envs = len(envs)
         self.observation_dim = envs[0].observation_dim
         self.n_actions = envs[0].n_actions
+
+    def set_cost_scale(self, scale: float) -> None:
+        """全環境のコスト倍率を設定する（コストカリキュラム用）。"""
+        for env in self.envs:
+            env.cost_scale = scale
 
     def reset(self, seed: int | None = None) -> np.ndarray:
         obs = [env.reset(seed=None if seed is None else seed + i)[0] for i, env in enumerate(self.envs)]

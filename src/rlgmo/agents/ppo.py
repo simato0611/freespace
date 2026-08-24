@@ -38,15 +38,23 @@ class PPOConfig:
     clip_range: float = 0.2
     ent_coef: float = 0.01        # エントロピー係数の初期値（下の目標エントロピー制御で自動調整）
     ent_coef_final: float = 0.001
-    ent_coef_max: float = 0.5     # 自動調整の上限
-    ent_target_start: float = 0.80  # 目標エントロピー（ln(行動数) に対する比）: 序盤は探索的
+    ent_coef_max: float = 0.1     # 自動調整の上限
+    ent_target_start: float = 0.60  # 目標エントロピー（ln(行動数) に対する比）: 序盤は探索的
     ent_target_final: float = 0.05  # 終盤は決定的に
     adaptive_entropy: bool = True   # False なら単純な線形減衰
+    explore_eps_start: float = 0.10  # 一様分布を混ぜる割合（探索の下限）
+    explore_eps_final: float = 0.01
+    cost_curriculum_start: float = 0.25  # 学習序盤のコスト倍率（0 に近いほど探索しやすい）
+    cost_curriculum_frac: float = 0.3    # 学習全体のこの割合をかけて実コストまで戻す
+    bc_steps: int = 0                    # 行動クローニングの事前学習ステップ数（0 で無効）
+    bc_lr: float = 1e-3
     vf_coef: float = 0.5
     max_grad_norm: float = 0.5
     target_kl: float = 0.03       # 超えたらそのエポックで打ち切り
     hidden: tuple[int, ...] = (256, 128)
     dropout: float = 0.1
+    shared_trunk: bool = False    # 方策と価値で胴体を共有しない（価値損失の干渉を防ぐ）
+    reward_scale: float = -1.0    # 収集した報酬に掛ける係数。負なら (1 - gamma) を使う
     device: str = "cpu"
     seed: int = 0
 
@@ -64,8 +72,11 @@ class PPOAgent:
         torch.manual_seed(self.cfg.seed)
         np.random.seed(self.cfg.seed)
         self.device = torch.device(self.cfg.device)
-        self.net = ActorCritic(obs_dim, n_actions, self.cfg.hidden, self.cfg.dropout).to(self.device)
+        self.net = ActorCritic(
+            obs_dim, n_actions, self.cfg.hidden, self.cfg.dropout, self.cfg.shared_trunk
+        ).to(self.device)
         self._ent_coef = self.cfg.ent_coef
+        self._reward_scale = (1 - self.cfg.gamma) if self.cfg.reward_scale < 0 else self.cfg.reward_scale
         self.opt = torch.optim.Adam(self.net.parameters(), lr=self.cfg.lr, eps=1e-5)
         self.obs_dim, self.n_actions = obs_dim, n_actions
 
@@ -101,6 +112,11 @@ class PPOAgent:
 
         for update in range(n_updates):
             frac = update / max(n_updates - 1, 1)
+            # コストカリキュラム: 実コストをいきなり課すと「何もしない」局所解に張り付くため、
+            # 序盤はコストを軽くして方向性のシグナルを学ばせ、徐々に実コストへ戻す。
+            if cfg.cost_curriculum_start < 1.0:
+                ramp = min(1.0, frac / max(cfg.cost_curriculum_frac, 1e-9))
+                vec_env.set_cost_scale(cfg.cost_curriculum_start + (1 - cfg.cost_curriculum_start) * ramp)
             for group in self.opt.param_groups:  # 線形減衰
                 group["lr"] = cfg.lr * (1 - 0.9 * frac)
             # 目標エントロピー: 序盤は探索的、終盤は決定的。金融環境では放っておくと
@@ -109,19 +125,21 @@ class PPOAgent:
                 cfg.ent_target_start + (cfg.ent_target_final - cfg.ent_target_start) * frac
             )
 
-            buf, obs = self._collect(vec_env, obs)
-            stats = self._update(buf, ent_target)
+            eps = cfg.explore_eps_start + (cfg.explore_eps_final - cfg.explore_eps_start) * frac
+            buf, obs = self._collect(vec_env, obs, eps)
+            stats = self._update(buf, ent_target, eps)
             step = (update + 1) * rollout_size
 
             history["step"].append(step)
-            history["reward"].append(float(buf["rewards"].mean()))
+            history["reward"].append(float(buf["rewards"].mean()) / self._reward_scale)
             for key in ("policy_loss", "value_loss", "entropy"):
                 history[key].append(stats[key])
             if update % log_every == 0:
                 print(
                     f"[ppo] step={step:>9,} reward/bar={history['reward'][-1]:+.4f} "
                     f"pi={stats['policy_loss']:+.4f} vf={stats['value_loss']:.4f} "
-                    f"H={stats['entropy']:.3f}/{ent_target:.2f} c_ent={self._ent_coef:.4f} kl={stats['kl']:.4f}"
+                    f"H={stats['entropy']:.3f}/{ent_target:.2f} c_ent={self._ent_coef:.4f} "
+                    f"eps={eps:.3f} kl={stats['kl']:.4f}"
                 )
             if callback is not None and step >= next_cb:
                 next_cb += callback_every
@@ -139,7 +157,7 @@ class PPOAgent:
         return history
 
     # -------------------------------------------------------------- 内部処理
-    def _collect(self, vec_env: SyncVectorEnv, obs: torch.Tensor) -> tuple[dict, torch.Tensor]:
+    def _collect(self, vec_env: SyncVectorEnv, obs: torch.Tensor, eps: float = 0.0) -> tuple[dict, torch.Tensor]:
         cfg, n_envs = self.cfg, vec_env.num_envs
         obs_buf = torch.zeros(cfg.n_steps, n_envs, self.obs_dim, device=self.device)
         act_buf = torch.zeros(cfg.n_steps, n_envs, dtype=torch.long, device=self.device)
@@ -150,10 +168,12 @@ class PPOAgent:
 
         self.net.eval()
         for t in range(cfg.n_steps):
-            action, logp, value = self.net.act(obs)
+            action, logp, value = self.net.act(obs, eps=eps)
             next_obs, reward, done, _ = vec_env.step(action.cpu().numpy())
             obs_buf[t], act_buf[t], logp_buf[t], val_buf[t] = obs, action, logp, value
-            rew_buf[t] = torch.as_tensor(reward, dtype=torch.float32, device=self.device)
+            # 報酬を (1-γ) 倍しておく。アドバンテージは正規化されるので方策勾配は不変だが、
+            # 価値のターゲットが O(1) に収まり、価値損失が暴れなくなる。
+            rew_buf[t] = torch.as_tensor(reward, dtype=torch.float32, device=self.device) * self._reward_scale
             done_buf[t] = torch.as_tensor(done, dtype=torch.float32, device=self.device)
             obs = torch.as_tensor(next_obs, dtype=torch.float32, device=self.device)
 
@@ -179,7 +199,7 @@ class PPOAgent:
         }
         return buf, obs
 
-    def _update(self, buf: dict, ent_target: float) -> dict:
+    def _update(self, buf: dict, ent_target: float, eps: float = 0.0) -> dict:
         """1 ロールアウトぶんの方策・価値更新。
 
         `ent_target` は目標エントロピー。実測が下回ればエントロピー係数を上げ、
@@ -197,7 +217,7 @@ class PPOAgent:
             np.random.shuffle(idx)
             for start in range(0, n, cfg.batch_size):
                 batch = torch.as_tensor(idx[start : start + cfg.batch_size], device=self.device)
-                logp, entropy, value = self.net.evaluate(buf["obs"][batch], buf["actions"][batch])
+                logp, entropy, value = self.net.evaluate(buf["obs"][batch], buf["actions"][batch], eps=eps)
                 ratio = torch.exp(logp - buf["logp"][batch])
                 a = adv[batch]
                 policy_loss = -torch.min(ratio * a, torch.clamp(ratio, 1 - cfg.clip_range, 1 + cfg.clip_range) * a).mean()
@@ -226,6 +246,57 @@ class PPOAgent:
         stats["ent_coef"] = self._ent_coef
         stats["ent_target"] = ent_target
         return stats
+
+
+    # ------------------------------------------------------- 行動クローニング
+    def pretrain(self, vec_env: SyncVectorEnv, teacher, steps: int = 20_000, batch_size: int = 512) -> float:
+        """簡単なルールベース方策を教師にした事前学習（行動クローニング）。
+
+        コストのある取引環境では、無作為な初期方策は「何もしない（フラット）」という
+        報酬 0 の局所解に落ちやすい。モメンタム等の粗い教師を数万ステップ模倣させて
+        から PPO を始めると、探索が「取引する側」から始まるため、この罠を避けられる。
+        教師の性能自体は重要ではない（PPO が上書きする）。
+
+        Args:
+            vec_env: 観測を集めるための環境。
+            teacher: 観測 → 行動インデックス の関数。
+            steps: 収集・学習するサンプル数。
+            batch_size: ミニバッチサイズ。
+
+        Returns:
+            最終の教師一致率（0〜1）。
+        """
+        if steps <= 0:
+            return float("nan")
+        obs_list, act_list = [], []
+        obs = vec_env.reset(seed=self.cfg.seed)
+        while len(obs_list) * vec_env.num_envs < steps:
+            actions = np.array([teacher(o) for o in obs])
+            obs_list.append(obs.copy())
+            act_list.append(actions)
+            obs, _, _, _ = vec_env.step(actions)
+        x = torch.as_tensor(np.concatenate(obs_list), dtype=torch.float32, device=self.device)
+        y = torch.as_tensor(np.concatenate(act_list), dtype=torch.long, device=self.device)
+
+        opt = torch.optim.Adam(self.net.parameters(), lr=self.cfg.bc_lr)
+        self.net.train()
+        accuracy = 0.0
+        for epoch in range(5):
+            perm = torch.randperm(len(x), device=self.device)
+            for start in range(0, len(x), batch_size):
+                batch = perm[start : start + batch_size]
+                logits, _ = self.net(x[batch])
+                loss = nn.functional.cross_entropy(logits, y[batch])
+                opt.zero_grad(set_to_none=True)
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.net.parameters(), self.cfg.max_grad_norm)
+                opt.step()
+            with torch.no_grad():
+                self.net.eval()
+                accuracy = float((self.net(x)[0].argmax(-1) == y).float().mean())
+                self.net.train()
+        print(f"[bc] 事前学習 完了: samples={len(x):,} 教師一致率={accuracy:.2%}")
+        return accuracy
 
     # ------------------------------------------------------------------ 推論
     @torch.no_grad()

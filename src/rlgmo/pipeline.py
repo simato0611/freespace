@@ -66,6 +66,9 @@ def train_fold(
 
     ppo_cfg = dataclasses.replace(cfg.ppo, seed=seed)
     agent = PPOAgent(vec.observation_dim, vec.n_actions, ppo_cfg)
+    if ppo_cfg.bc_steps > 0:
+        # 「常にフラット」の局所解を避けるため、粗いモメンタム則を模倣してから PPO を始める
+        agent.pretrain(vec, momentum_policy(train_envs[0]), steps=ppo_cfg.bc_steps)
 
     def callback(agent: PPOAgent, step: int) -> dict:
         policy = ensemble_policy([agent], cfg.env.actions, confidence=cfg.train.confidence)

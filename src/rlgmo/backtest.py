@@ -121,3 +121,22 @@ def momentum_policy(env: TradingEnv, feature: str = "ret_10_15m", threshold: flo
 def random_policy(n_actions: int, seed: int = 0) -> Policy:
     rng = np.random.default_rng(seed)
     return lambda obs: int(rng.integers(n_actions))
+
+
+def delayed_policy(policy: Policy, delay_bars: int, flat_action: int) -> Policy:
+    """`delay_bars` バー前の観測で意思決定する方策に変換する（執行遅延のストレス試験）。
+
+    レイテンシ・障害・約定待ちで判断が遅れる状況を、環境を変えずに再現する。
+    遅延に弱い方策は「直近 1 分の情報にだけ乗っている」ことを意味し、実運用で崩れる。
+    """
+    from collections import deque
+
+    buffer: deque = deque(maxlen=delay_bars + 1)
+
+    def wrapped(obs: np.ndarray) -> int:
+        buffer.append(obs)
+        if len(buffer) <= delay_bars:
+            return flat_action
+        return policy(buffer[0])
+
+    return wrapped

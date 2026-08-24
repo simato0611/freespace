@@ -13,6 +13,7 @@ ppo:
   batch_size: 512
   epochs: 3
   device: cpu
+  bc_steps: 20000
 walkforward:
   train_days: 40
   valid_days: 10
@@ -20,10 +21,10 @@ walkforward:
   step_days: 10
   embargo_hours: 24
 train:
-  total_steps: 60000
+  total_steps: 200000
   n_envs: 4
   seeds: [0, 1]
-  eval_every: 20000
+  eval_every: 50000
   episode_len: 720
   confidence: 0.15
   out_dir: runs/smoke
