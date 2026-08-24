@@ -1,0 +1,93 @@
+# ============================================================================
+# 実データ検証用 / 判断間隔 60 分版（Bitstamp BTC/USD 1 分足、2023-06 以降）
+#
+#   設計書 2 節のコスト算術は「平均保有 2〜8 時間」を要求するが、毎分の建て替えを
+#   方策の裁量に任せると実データでは回転率が跳ね上がる（実測: 40 回/日、コスト 36bp/日）。
+#   そこで判断間隔を環境の構造として 60 分に固定する（action_repeat: 240）。
+#   ポジションは 1 分ごとに値洗いされ、建玉管理料も 1 分粒度で課金される。
+#   データ元: https://github.com/ff137/bitstamp-btcusd-minute-data
+#   scripts/import_bitstamp.py で取り込む。
+#
+#   GMO の BTC_JPY そのものではないが、1 分足の実際の市場構造（ボラのクラスタ性・
+#   厚い裾・ほぼゼロの自己相関・日中季節性）を持つ実データである。
+#   コストモデルは GMO レバレッジの設定（手数料 0 / 建玉管理料 0.04%日 / スプレッド）
+#   をそのまま使う。最終判断は GMO 自身の 1 分足で取り直して行うこと。
+# ============================================================================
+data:
+  symbol: BTCUSD_bitstamp
+  interval: 1min
+  path: data/raw/BTCUSD_bitstamp_1min.parquet
+  start: "2023-06-01"
+  end: "2026-08-23"
+  use_synthetic: false
+
+features:
+  timeframes: [1, 5, 15]
+  ret_lags: [1, 2, 3, 5, 10, 20]
+  scale_window: 10080        # 7 日の因果ロバスト標準化
+  clip: 5.0
+
+env:
+  leverage_cap: 2.0
+  actions: [-1.0, -0.5, 0.0, 0.5, 1.0]
+  episode_len: 11520         # 8 日ぶん（判断 48 回）
+  initial_equity: 1000000.0
+  maintenance_margin: 0.75
+  daily_loss_limit: 0.02
+  action_repeat: 240          # 240 分 (4 時間) に 1 回だけ目標ポジションを決める
+  vol_target: true
+  vol_target_ann: 0.20
+  rebalance_tolerance: 0.02
+  randomize_costs: true
+  cost_jitter: 0.5
+  reward:
+    kind: logret
+    vol_norm: true
+    target_vol_ann: 0.20
+    turnover_penalty: 0.0002
+    dd_penalty: 0.5
+  cost:
+    half_spread_bp: 2.0      # GMO BTC_JPY レバレッジの想定値（実測で置き換えること）
+    slippage_bp: 0.5
+    taker_fee_bp: 0.0
+    carry_rate_daily: 0.0004
+    carry_mode: daily_0600
+    spread_vol_beta: 1.0
+
+ppo:
+  lr: 0.0003
+  n_steps: 512
+  batch_size: 1024
+  epochs: 4
+  gamma: 0.99               # 判断 100 回 ≒ 400 時間 ≒ 17 日の実効ホライズン
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.01
+  ent_coef_max: 0.1
+  ent_target_start: 0.6
+  ent_target_final: 0.05
+  adaptive_entropy: true
+  explore_eps_start: 0.10
+  explore_eps_final: 0.01
+  cost_curriculum_start: 0.25
+  cost_curriculum_frac: 0.3
+  bc_steps: 20000
+  hidden: [256, 128]
+  dropout: 0.1
+  device: cpu
+
+walkforward:
+  train_days: 270
+  valid_days: 45
+  test_days: 90
+  step_days: 90
+  embargo_hours: 24
+
+train:
+  total_steps: 50000        # 判断回数（1 判断 = 240 分）
+  n_envs: 8
+  seeds: [0, 1]              # 本来は 5 シード推奨。計算資源の都合で 2 シード
+  eval_every: 12500
+  episode_len: 11520         # 8 日ぶん（判断 48 回）
+  confidence: 0.15
+  out_dir: runs/btc_real_h240

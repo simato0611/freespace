@@ -160,3 +160,59 @@ def test_observation_contains_account_state():
     assert obs[-6] == 0.0  # 初期ポジションはフラット
     obs, *_ = env.step(int(np.argmax(env.cfg.actions)))
     assert obs[-6] > 0.0  # ロング後はポジションが観測に反映される
+
+
+def test_action_repeat_advances_multiple_bars_without_extra_trades():
+    """判断間隔 (action_repeat) を空けると、保持中のバーでは発注コストが発生しない。"""
+    n = 200
+    idx = pd.date_range("2026-03-01", periods=n, freq="1min", tz="UTC")
+    prices = np.full(n, 1e7)
+    meta = pd.DataFrame({"open": prices, "high": prices, "low": prices, "close": prices,
+                         "volume": np.ones(n), "vol_1m": np.full(n, 1e-3), "vol_ratio": np.ones(n)}, index=idx)
+    features = pd.DataFrame(np.zeros((n, 2), dtype=np.float32), columns=["a", "b"], index=idx)
+    cost = CostConfig(half_spread_bp=3.0, slippage_bp=0.0, carry_mode="none", spread_vol_beta=0.0)
+    cfg = dataclasses.replace(base_cfg(cost=cost), action_repeat=15)
+    env = TradingEnv(features, meta, cfg, training=False)
+
+    env.reset(start=0)
+    t0 = env._t
+    long_idx = int(np.argmax(env.cfg.actions))
+    _, _, _, _, info = env.step(long_idx)
+    assert env._t == t0 + 15                       # 1 ステップで 15 バー進む
+    assert info["ts"] == idx[t0 + 15]
+
+    # 建てた直後の 1 回だけコストが出る。同じ目標を出し続ければ追加コストは出ない。
+    first_cost = cfg.initial_equity - env.equity
+    assert first_cost > 0
+    assert info["trade_cost"] == pytest.approx(first_cost, rel=1e-9)  # 最初のサブバーのコストが集計されている
+    equity_after_entry = env.equity
+    for _ in range(3):
+        env.step(long_idx)
+    assert env.equity == pytest.approx(equity_after_entry, rel=1e-9)
+
+
+def test_action_repeat_still_charges_carry_while_holding():
+    """保持中も建玉管理料は毎バー判定される（06:00 JST をまたげば課金）。"""
+    n = 60 * 24 + 60
+    idx = pd.date_range("2026-03-01 00:00", periods=n, freq="1min", tz="UTC")
+    prices = np.full(n, 1e7)
+    meta = pd.DataFrame({"open": prices, "high": prices, "low": prices, "close": prices,
+                         "volume": np.ones(n), "vol_1m": np.full(n, 1e-3), "vol_ratio": np.ones(n)}, index=idx)
+    features = pd.DataFrame(np.zeros((n, 2), dtype=np.float32), columns=["a", "b"], index=idx)
+    cfg = dataclasses.replace(
+        base_cfg(cost=CostConfig(half_spread_bp=0.0, slippage_bp=0.0, carry_mode="daily_0600",
+                                 carry_rate_daily=0.0004)),
+        action_repeat=37,  # 課金バーが判断間隔の途中に来る設定（集計漏れの検出）
+    )
+    env = TradingEnv(features, meta, cfg, training=False)
+    env.reset(start=0)
+    long_idx = int(np.argmax(env.cfg.actions))
+    charged = 0.0
+    while True:
+        _, _, terminated, truncated, info = env.step(long_idx)
+        charged += info["carry_cost"]
+        if terminated or truncated:
+            break
+    # 1 日で 1 回、建玉評価額の 0.04%
+    assert 0.0 < charged < cfg.initial_equity * 0.0005
+    assert charged == pytest.approx(cfg.initial_equity * 0.0004, rel=0.02)

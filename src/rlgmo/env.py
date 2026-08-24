@@ -60,7 +60,8 @@ class EnvConfig:
 
     leverage_cap: float = 2.0                 # 個人向けレバレッジ上限（GMO は 2 倍）
     actions: tuple[float, ...] = (-1.0, -0.5, 0.0, 0.5, 1.0)
-    episode_len: int = 1440                   # 1 エピソード = 1 日ぶん
+    episode_len: int = 1440                   # 1 エピソード = 1 日ぶん（バー数）
+    action_repeat: int = 1                    # 1 回の意思決定で進めるバー数（= 判断間隔）
     initial_equity: float = 1_000_000.0
     maintenance_margin: float = 0.75          # 証拠金維持率のロスカット水準
     daily_loss_limit: float = 0.02            # 当日 -2% で打ち切り（リスクレイヤの模擬）
@@ -151,7 +152,12 @@ class TradingEnv:
         return self._obs(), {"t": self._t, "equity": self.equity}
 
     def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
-        """1 バー進める。
+        """1 回の意思決定を行い、`cfg.action_repeat` 本ぶんのバーを進める。
+
+        `action_repeat > 1` は「判断間隔」を表す。例えば 15 なら、15 分に 1 回だけ目標
+        ポジションを決め、その間は建玉を保持する（値洗いと建玉管理料は毎分発生する）。
+        コスト算術（設計書 2 節）が要求する保有時間を、**環境の構造として強制する**ための仕組み。
+        毎分の建て替えを方策の裁量に任せると、実データでは回転率が跳ね上がってコストで死ぬ。
 
         Args:
             action: `cfg.actions` のインデックス。
@@ -159,10 +165,27 @@ class TradingEnv:
         Returns:
             (observation, reward, terminated, truncated, info)
         """
+        target_action = float(self.cfg.actions[int(action)]) * self._size_scale(self._t)
+        total_reward = 0.0
+        info: dict[str, Any] = {}
+        accumulated = {"trade_cost": 0.0, "carry_cost": 0.0, "pnl": 0.0, "turnover": 0.0}
+        terminated = truncated = False
+        for i in range(max(1, self.cfg.action_repeat)):
+            reward, terminated, truncated, info = self._advance(target_action if i == 0 else None)
+            total_reward += reward
+            for key in accumulated:  # サブバーぶんを合算する（発注コストは最初のバーで発生する）
+                accumulated[key] += info[key]
+            if terminated or truncated:
+                break
+        info.update(accumulated)
+        return self._obs(), float(total_reward), terminated, truncated, info
+
+    def _advance(self, new_target: float | None) -> tuple[float, bool, bool, dict[str, Any]]:
+        """1 バー進める。`new_target` が None なら建玉を維持する（値洗いのみ）。"""
         t = self._t
         cfg = self.cfg
-        target = float(cfg.actions[int(action)]) * self._size_scale(t)
         prev_pos, prev_notional = self._pos, self._notional
+        target = prev_pos if new_target is None else new_target
 
         # --- 執行: t+1 のオープンで約定
         fill_open = self._open[t + 1]
@@ -170,7 +193,8 @@ class TradingEnv:
         marked_prev = prev_notional * (fill_open / self._close[t])
         # 建玉は毎バー「有効証拠金 × 目標比率」に再調整される（= 実質的なボラ調整）。
         # ただし僅かなズレで発注し続けるとスプレッドを無駄に払うため、許容幅を設ける。
-        if abs(desired_notional - marked_prev) < cfg.rebalance_tolerance * cfg.leverage_cap * self.equity:
+        hold_only = new_target is None
+        if hold_only or abs(desired_notional - marked_prev) < cfg.rebalance_tolerance * cfg.leverage_cap * self.equity:
             target_notional, traded = marked_prev, 0.0
             target = marked_prev / max(cfg.leverage_cap * self.equity, 1e-9)
         else:
@@ -237,7 +261,7 @@ class TradingEnv:
             "margin_ratio": margin_ratio,
             "price": self._close[self._t],
         }
-        return self._obs(), float(reward), terminated, truncated, info
+        return float(reward), terminated, truncated, info
 
     # -------------------------------------------------------------- internals
     def _size_scale(self, t: int) -> float:

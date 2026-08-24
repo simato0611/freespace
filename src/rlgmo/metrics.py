@@ -16,12 +16,27 @@ import numpy as np
 import pandas as pd
 
 BARS_PER_YEAR = 365 * 24 * 60
+MINUTES_PER_YEAR = 365 * 24 * 60
+
+
+def infer_bars_per_year(index: pd.DatetimeIndex, default: int = BARS_PER_YEAR) -> int:
+    """記録の時間間隔から年間バー数を推定する。
+
+    判断間隔（`EnvConfig.action_repeat`）を変えると 1 レコードの時間幅が変わるため、
+    年率換算を index から推定しないと Sharpe も回転率も間違える。
+    """
+    if not isinstance(index, pd.DatetimeIndex) or len(index) < 3:
+        return default
+    step_min = float(pd.Series(index).diff().dt.total_seconds().median() / 60.0)
+    if not np.isfinite(step_min) or step_min <= 0:
+        return default
+    return int(round(MINUTES_PER_YEAR / step_min))
 
 
 def equity_metrics(
     equity: pd.Series,
     positions: pd.Series | None = None,
-    bars_per_year: int = BARS_PER_YEAR,
+    bars_per_year: int | None = None,
     trade_threshold: float = 0.05,
 ) -> dict:
     """エクイティカーブから主要指標を計算する。
@@ -29,7 +44,7 @@ def equity_metrics(
     Args:
         equity: バーごとの有効証拠金（index は時刻）。
         positions: バーごとのポジション比率（回転率・稼働率の算出に使う）。
-        bars_per_year: 年率換算に使う 1 年あたりのバー数。
+        bars_per_year: 年率換算に使う 1 年あたりのバー数。None なら index から推定する。
         trade_threshold: 「1 回の売買」とみなすポジション変化の下限。ボラターゲットや
             建玉の値洗いで毎バー微小に変動するため、閾値なしでは取引回数が実態の
             数百倍になる。
@@ -38,6 +53,8 @@ def equity_metrics(
         指標の dict。
     """
     equity = equity.astype(float)
+    bars_per_year = bars_per_year or infer_bars_per_year(pd.DatetimeIndex(equity.index))
+    bars_per_day = max(bars_per_year / 365.0, 1e-9)
     ret = np.log(equity).diff().dropna()
     n = len(ret)
     if n < 2:
@@ -57,7 +74,7 @@ def equity_metrics(
 
     out = {
         "n_bars": int(n),
-        "days": round(n / 1440, 1),
+        "days": round(n / bars_per_day, 1),
         "total_return": float(equity.iloc[-1] / equity.iloc[0] - 1),
         "cagr": float(cagr),
         "ann_vol": float(std * scale),
@@ -78,7 +95,7 @@ def equity_metrics(
         out.update(
             {
                 "exposure": float(pos.abs().mean()),
-                "turnover_per_day": float(turn.sum() / max(n / 1440, 1e-9)),
+                "turnover_per_day": float(turn.sum() / max(n / bars_per_day, 1e-9)),
                 "n_trades": n_trades,
                 "avg_hold_bars": float(pos.abs().sum() / max(n_trades, 1)),
                 "long_share": float((pos > 0).mean()),
@@ -134,7 +151,7 @@ def summarize(
     """評価レポート用のまとめ（コスト内訳・DSR を含む）。"""
     out = equity_metrics(equity, positions)
     if costs is not None and len(costs):
-        years = max(len(equity) / BARS_PER_YEAR, 1e-9)
+        years = max(len(equity) / infer_bars_per_year(pd.DatetimeIndex(equity.index)), 1e-9)
         out["cost_drag_ann"] = float(costs.sum() / equity.iloc[0] / years)
     out["n_trials"] = n_trials
     out["deflated_sharpe_p"] = deflated_sharpe(
@@ -144,6 +161,7 @@ def summarize(
         trial_sharpe_std_ann=trial_sharpe_std_ann,
         skew=out.get("skew", 0.0),
         kurt=out.get("excess_kurtosis", 0.0) + 3.0,
+        bars_per_year=infer_bars_per_year(pd.DatetimeIndex(equity.index)),
     )
     return out
 
