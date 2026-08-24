@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+data/raw/
+data/processed/
+runs/
+*.parquet
+*.csv.gz
+.ipynb_checkpoints/
+.pytest_cache/

@@ -1,0 +1,9 @@
+# 実行に必要な最小依存
+numpy>=1.24
+pandas>=2.0
+pyyaml>=6.0
+requests>=2.31
+torch>=2.1        # PPO エージェント（CPU ビルドで十分）
+
+# 任意（可視化・レポート）
+# matplotlib>=3.7

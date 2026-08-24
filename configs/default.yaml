@@ -1,0 +1,89 @@
+# ============================================================================
+# GMO コイン レバレッジ / 1 分足 RL 戦略 既定設定
+#   実運用前に必ず: (1) 手数料・建玉管理料の最新値、(2) スプレッドの実測値、
+#   (3) ウォークフォワードの期間、を自分の環境に合わせて更新すること。
+# ============================================================================
+data:
+  symbol: BTC_JPY          # GMO レバレッジ銘柄（_JPY 付き）
+  interval: 1min
+  path: data/raw/BTC_JPY_1min.parquet
+  start: "2023-01-01"
+  end: "2026-06-30"
+  use_synthetic: false
+  synthetic_minutes: 259200   # 180 日
+
+features:
+  timeframes: [1, 5, 15]     # 1 分足で判断し、5/15 分足で文脈を与える
+  ret_lags: [1, 2, 3, 5, 10, 20]
+  vol_span: 60
+  rsi_period: 14
+  atr_period: 14
+  donchian: 48
+  effr_period: 20
+  ofi_period: 20
+  vwap_period: 60
+  scale_window: 10080        # 7 日ぶんの因果ロバスト標準化
+  clip: 5.0
+  carry_hour_jst: 6
+
+env:
+  leverage_cap: 2.0          # 個人向け上限（GMO は 2 倍）
+  actions: [-1.0, -0.5, 0.0, 0.5, 1.0]
+  episode_len: 1440          # 1 日 = 1 エピソード
+  initial_equity: 1000000.0
+  maintenance_margin: 0.75   # ロスカット水準
+  daily_loss_limit: 0.02     # 当日 -2% で強制フラット
+  vol_target: true
+  vol_target_ann: 0.20       # 年率 20% を目標リスクに
+  vol_scale_cap: 1.0
+  rebalance_tolerance: 0.02  # 建玉のズレがこの割合未満なら発注しない（無駄なスプレッド支払いを防ぐ）
+  randomize_costs: true      # 学習時のみコストを ±50% 揺らしてロバスト化
+  cost_jitter: 0.5
+  reward:
+    kind: logret             # logret | dsr
+    vol_norm: true
+    target_vol_ann: 0.20
+    turnover_penalty: 0.0002 # 実コストに加える回転抑制
+    dd_penalty: 0.5
+    bankrupt_penalty: 1.0
+  cost:
+    half_spread_bp: 2.0      # ← scripts/measure_spread.py の実測値で置き換える
+    slippage_bp: 0.5
+    taker_fee_bp: 0.0        # GMO レバレッジは取引手数料無料
+    carry_rate_daily: 0.0004 # 建玉管理料 0.04%/日（JST 06:00 課金）
+    carry_mode: daily_0600
+    carry_hour_jst: 6
+    spread_vol_beta: 1.0     # 荒れ相場でのスプレッド拡大
+
+ppo:
+  lr: 0.0003
+  n_steps: 512
+  batch_size: 1024
+  epochs: 4
+  gamma: 0.999
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.01
+  ent_coef_final: 0.001
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  target_kl: 0.03
+  hidden: [256, 128]
+  dropout: 0.1
+  device: cpu
+
+walkforward:
+  train_days: 90
+  valid_days: 15
+  test_days: 15
+  step_days: 15
+  embargo_hours: 24
+
+train:
+  total_steps: 1500000
+  n_envs: 8
+  seeds: [0, 1, 2, 3, 4]     # アンサンブル（単一シードは信用しない）
+  eval_every: 100000
+  episode_len: 1440
+  confidence: 0.15
+  out_dir: runs/default

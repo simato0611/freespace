@@ -1,0 +1,29 @@
+# 配線確認用（合成データ・数分で完走）。性能評価には使わないこと。
+data:
+  use_synthetic: true
+  synthetic_minutes: 129600      # 90 日
+features:
+  scale_window: 4320             # 3 日（合成データが短いため）
+env:
+  leverage_cap: 2.0
+  episode_len: 720
+  randomize_costs: true
+ppo:
+  n_steps: 256
+  batch_size: 512
+  epochs: 3
+  device: cpu
+walkforward:
+  train_days: 40
+  valid_days: 10
+  test_days: 10
+  step_days: 10
+  embargo_hours: 24
+train:
+  total_steps: 60000
+  n_envs: 4
+  seeds: [0, 1]
+  eval_every: 20000
+  episode_len: 720
+  confidence: 0.15
+  out_dir: runs/smoke
