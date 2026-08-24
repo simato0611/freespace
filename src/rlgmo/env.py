@@ -15,8 +15,10 @@ MDP の定義
   無駄な発注は `rebalance_tolerance` で抑える。
 - **コスト**: 取引コスト（片道 = スプレッド/2 + スリッページ）+ 建玉管理料
   （0.04%/日・JST 06:00 課金）。GMO レバレッジの取引手数料は 0。
-- **終了条件**: 証拠金維持率がロスカット水準を割る / 日次損失上限に到達 /
-  エピソード長に到達。
+- **終了条件**: 証拠金維持率がロスカット水準を割る（ロスカット）/ エピソード長に到達。
+  日次損失上限に触れた場合は**終了せず、その日はフラットに固定して翌日再開**する
+  （実運用のリスクレイヤ `rlgmo.risk` と同じ挙動。バックテストを途中で打ち切らないため、
+  評価期間が損失日で切れてしまう問題も同時に防ぐ）。
 
 報酬
 ----
@@ -142,6 +144,7 @@ class TradingEnv:
         self._bars_held = 0
         self._day_start_equity = self.equity
         self._day_id = self._jst_day(self._t)
+        self._blocked = False  # 日次損失上限に触れた日は新規建てを止める
         self._dsr_a = 0.0
         self._dsr_b = 1e-8
         # ドメインランダマイゼーション: エピソードごとにコスト水準を揺らす
@@ -186,6 +189,8 @@ class TradingEnv:
         cfg = self.cfg
         prev_pos, prev_notional = self._pos, self._notional
         target = prev_pos if new_target is None else new_target
+        if self._blocked:  # 日次損失上限に触れた日は建てない（リスクレイヤの模擬）
+            target = 0.0
 
         # --- 執行: t+1 のオープンで約定
         fill_open = self._open[t + 1]
@@ -240,12 +245,14 @@ class TradingEnv:
             self._force_flat(rate)
             reward -= cfg.reward.bankrupt_penalty
             terminated = True
-        if self._jst_day(self._t) != self._day_id:  # 日次リセット
+        if self._jst_day(self._t) != self._day_id:  # 日付が変わったらリセット・取引再開
             self._day_id = self._jst_day(self._t)
             self._day_start_equity = self.equity
-        elif self.equity < self._day_start_equity * (1 - cfg.daily_loss_limit):  # 日次損失上限
+            self._blocked = False
+        elif not self._blocked and self.equity < self._day_start_equity * (1 - cfg.daily_loss_limit):
+            # 日次損失上限: 当日はフラットに固定し、翌日から再開する（エピソードは終了しない）
             self._force_flat(rate)
-            terminated = True
+            self._blocked = True
         truncated = self._t >= self._end
 
         info = {
@@ -260,6 +267,7 @@ class TradingEnv:
             "turnover": abs(target - prev_pos),
             "margin_ratio": margin_ratio,
             "price": self._close[self._t],
+            "blocked": self._blocked,
         }
         return float(reward), terminated, truncated, info
 

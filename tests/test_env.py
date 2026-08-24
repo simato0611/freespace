@@ -123,17 +123,53 @@ def test_liquidation_on_large_adverse_move():
     assert 0.5 < env.equity / env.cfg.initial_equity < 0.7
 
 
-def test_daily_loss_limit_forces_flat():
-    prices = np.concatenate([np.full(5, 1e7), np.linspace(1e7, 0.95e7, 60)])
+def test_daily_loss_limit_flattens_for_the_day_without_ending_episode():
+    """日次損失上限は「当日フラット・翌日再開」。エピソードは終了させない。
+
+    終了させてしまうと、バックテストが最初の悪い日で打ち切られ、評価期間が
+    実際より短くなる（実運用のリスクレイヤとも挙動が食い違う）。
+    """
+    prices = np.concatenate([np.full(5, 1e7), np.linspace(1e7, 0.95e7, 120)])
     cfg = dataclasses.replace(base_cfg(leverage_cap=1.0), daily_loss_limit=0.02)
     env = make_env_from_prices(prices, cfg)
     env.reset(start=0)
     long_idx = int(np.argmax(env.cfg.actions))
+    blocked_seen = False
+    steps = 0
     for _ in range(len(prices) - 3):
-        _, _, terminated, truncated, _ = env.step(long_idx)
+        _, _, terminated, truncated, info = env.step(long_idx)
+        steps += 1
+        blocked_seen |= info["blocked"]
+        if info["blocked"]:
+            assert info["position"] == 0.0        # 当日はフラットに固定される
+        assert not terminated                      # ロスカットではないので終了しない
+        if truncated:
+            break
+    assert blocked_seen
+    assert steps > 60  # 最初の損失日で打ち切られていない
+
+
+def test_blocked_state_clears_on_new_jst_day():
+    n = 60 * 30
+    idx = pd.date_range("2026-03-01 19:00", periods=n, freq="1min", tz="UTC")  # JST 04:00 開始
+    prices = np.concatenate([np.full(60, 1e7), np.linspace(1e7, 0.9e7, 240), np.full(n - 300, 0.9e7)])
+    meta = pd.DataFrame({"open": prices, "high": prices, "low": prices, "close": prices,
+                         "volume": np.ones(n), "vol_1m": np.full(n, 1e-3), "vol_ratio": np.ones(n)}, index=idx)
+    features = pd.DataFrame(np.zeros((n, 2), dtype=np.float32), columns=["a", "b"], index=idx)
+    cfg = dataclasses.replace(base_cfg(leverage_cap=1.0), daily_loss_limit=0.02)
+    env = TradingEnv(features, meta, cfg, training=False)
+    env.reset(start=0)
+    long_idx = int(np.argmax(env.cfg.actions))
+    blocked, unblocked_after = False, False
+    while True:
+        _, _, terminated, truncated, info = env.step(long_idx)
+        if info["blocked"]:
+            blocked = True
+        elif blocked:
+            unblocked_after = True  # 日付が変わって再開した
         if terminated or truncated:
             break
-    assert terminated and env._pos == 0.0
+    assert blocked and unblocked_after
 
 
 def test_vector_env_autoresets():

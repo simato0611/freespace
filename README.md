@@ -5,6 +5,20 @@ GMO コインのレバレッジ取引（`BTC_JPY` 等）を対象に、**1 分�
 
 📄 **設計の本体は [`docs/strategy_design.md`](docs/strategy_design.md)**（MDP 定式化・コスト算術・検証プロトコル・採用ゲート・失敗モード）。
 
+⚠️ **実データでの検証結果は [`docs/real_data_findings.md`](docs/real_data_findings.md)。**
+BTC/USD 1 分足 153 万バー（2023-06〜2026-08）でウォークフォワード検証した結果:
+
+| 判断間隔 | fold | OOS日数 | 純リターン | Sharpe | 回転/日 | グロス/年 | 取引コスト/年 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 分 | 2 | 159 | −49.98% | −12.01 | 7.34 | +2.2% | −157.2% |
+| 60 分 | 9 | 758 | −74.25% | −5.18 | 2.68 | −3.3% | −58.9% |
+| 240 分 | 9 | 765 | −34.39% | −1.38 | 1.08 | +9.6% | −23.9% |
+
+**取引コストを完全にゼロにしても Sharpe は +0.11**（2.1 年 OOS・誤差 ±0.7）。
+つまり損失の直接原因はコストだが、**コストを消しても儲からない**。
+1 分足 OHLCV から作れる特徴量の予測力（IC 0.01〜0.02）は、損益分岐に必要な水準の
+1/2〜1/30 しかない。実装の問題ではなく情報量の問題である。
+
 ---
 
 ## この設計の要点
@@ -59,6 +73,30 @@ python scripts/backtest.py --config configs/default.yaml \
 # 5) ペーパートレード（既定はドライラン。--live で実発注）
 python scripts/live_paper.py --config configs/default.yaml --models "runs/default/fold0_seed*.pt"
 ```
+
+## 実データでの再現手順
+
+```bash
+# 1) 公開データセット（Bitstamp BTC/USD 1分足、2012-01〜、日次更新、欠損なし）を取得
+git clone --depth 1 https://github.com/ff137/bitstamp-btcusd-minute-data.git /tmp/btcdata
+python scripts/import_bitstamp.py --src /tmp/btcdata --start 2023-06-01     --out data/raw/BTCUSD_bitstamp_1min.parquet
+
+# 2) まず「そもそも予測力があるか」を測る（RL を回す前にこれをやる）
+python scripts/analyze_data.py --config configs/btc_real.yaml --stride 5
+
+# 3) ウォークフォワード学習（判断間隔 1分 / 60分 / 240分）
+python scripts/train_walkforward.py --config configs/btc_real.yaml       # 判断間隔 1 分
+python scripts/train_walkforward.py --config configs/btc_real_h60.yaml   # 判断間隔 60 分
+python scripts/train_walkforward.py --config configs/btc_real_h240.yaml  # 判断間隔 240 分
+
+# 4) 連結したアウトオブサンプル曲線で比較
+python scripts/aggregate_runs.py runs/btc_real:1分判断 runs/btc_real_h60:60分判断     runs/btc_real_h240:240分判断
+```
+
+GMO 自身の 1 分足で同じことをする場合は `scripts/fetch_data.py` でデータを取り、
+`configs/default.yaml` の `data.path` を差し替える（この実行環境からは GMO の API に
+到達できなかったため、検証は公開データセットで行っている。詳細は
+[`docs/real_data_findings.md`](docs/real_data_findings.md) の 1 節）。
 
 ## 動作確認済みの疎通例（合成データ・2 fold）
 

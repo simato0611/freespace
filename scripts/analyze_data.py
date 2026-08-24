@@ -73,9 +73,13 @@ def main() -> None:
     parser.add_argument("--config", default="configs/btc_real.yaml")
     parser.add_argument("--stride", type=int, default=3, help="回帰に使うサンプルの間引き間隔（重複ラベル対策）")
     parser.add_argument("--alpha", type=float, default=300.0, help="Ridge の正則化強度")
+    parser.add_argument("--model", default="ridge", choices=["ridge", "gbdt"],
+                        help="予測モデル。gbdt は非線形（scikit-learn の HistGradientBoosting）")
+    parser.add_argument("--horizons", default="1,5,15,60", help="予測ホライズン（分・カンマ区切り）")
     parser.add_argument("--out", default="runs/analysis")
     args = parser.parse_args()
 
+    horizons = tuple(int(h) for h in args.horizons.split(","))
     cfg = load_config(args.config)
     features, meta = prepare_data(cfg)
     close = meta["close"]
@@ -96,11 +100,12 @@ def main() -> None:
     table = breakeven_table(ann_vol, round_trip, cost.carry_rate_daily * 1e4)
     print(table.to_string(index=False))
 
-    print("\n===== 3. 特徴量の予測力（ウォークフォワード Ridge） =====")
+    model_name = "Ridge（線形）" if args.model == "ridge" else "HistGradientBoosting（非線形）"
+    print(f"\n===== 3. 特徴量の予測力（ウォークフォワード / {model_name}） =====")
     x_all = features.to_numpy(dtype=np.float64)
     folds = make_folds(features.index, cfg.walkforward)
     rows = []
-    for horizon in HORIZONS:
+    for horizon in horizons:
         fwd = (np.log(close).shift(-horizon) - np.log(close)).to_numpy()
         vol = logret.rolling(60).std().to_numpy() * np.sqrt(horizon)
         target = np.divide(fwd, vol, out=np.zeros_like(fwd), where=(vol > 0))  # ボラ正規化した先行リターン
@@ -113,8 +118,18 @@ def main() -> None:
             xtr, ytr, xte, yte = xtr[ok_tr], ytr[ok_tr], xte[ok_te], yte[ok_te]
             if len(xtr) < 1000 or len(xte) < 1000:
                 continue
-            beta = ridge_fit(xtr, ytr, args.alpha)
-            pred = ridge_predict(xte, beta)
+            if args.model == "ridge":
+                pred = ridge_predict(xte, ridge_fit(xtr, ytr, args.alpha))
+            else:
+                from sklearn.ensemble import HistGradientBoostingRegressor
+
+                model = HistGradientBoostingRegressor(
+                    max_iter=200, learning_rate=0.05, max_depth=4,
+                    l2_regularization=1.0, early_stopping=True, validation_fraction=0.15,
+                    random_state=0,
+                )
+                model.fit(xtr, ytr)
+                pred = model.predict(xte)
             ss_res = float(((yte - pred) ** 2).sum())
             ss_tot = float(((yte - yte.mean()) ** 2).sum())
             ic = float(np.corrcoef(pred, yte)[0, 1])
@@ -125,7 +140,7 @@ def main() -> None:
         ic_mean=("ic", "mean"), ic_std=("ic", "std"), folds=("fold", "count"))
     print(summary.round(5).to_string())
     print("\n※ IC（予測と実現の相関）から期待できる年率 Sharpe の上限（コスト無視・完全サイジング）:")
-    for horizon in HORIZONS:
+    for horizon in horizons:
         sub = pred_df[pred_df.horizon == horizon]
         if sub.empty:
             continue
@@ -136,9 +151,9 @@ def main() -> None:
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
-    pred_df.to_csv(out_dir / "predictability.csv", index=False)
+    pred_df.to_csv(out_dir / f"predictability_{args.model}.csv", index=False)
     table.to_csv(out_dir / "breakeven.csv", index=False)
-    print(f"\n出力: {out_dir}/predictability.csv, {out_dir}/breakeven.csv")
+    print(f"\n出力: {out_dir}/predictability_{args.model}.csv, {out_dir}/breakeven.csv")
 
 
 if __name__ == "__main__":
