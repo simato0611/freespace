@@ -130,7 +130,7 @@ def main() -> None:
                 print("[warn] 特徴量が空（ウォームアップ不足）")
                 continue
 
-            staleness = (pd.Timestamp.utcnow().tz_localize("UTC") - features.index[-1]).total_seconds()
+            staleness = (pd.Timestamp.now(tz="UTC") - features.index[-1]).total_seconds()
             obs_market = features.iloc[-1].to_numpy(dtype=np.float32)
             account = np.array([position, abs(position), 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
             obs = np.concatenate([obs_market, account])

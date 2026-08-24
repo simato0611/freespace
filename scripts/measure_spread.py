@@ -55,7 +55,7 @@ def main() -> None:
             buy_vwap, sell_vwap = walk_book(asks, args.size), walk_book(bids, args.size)
             rows.append(
                 {
-                    "ts": pd.Timestamp.utcnow(),
+                    "ts": pd.Timestamp.now(tz="UTC"),
                     "mid": mid,
                     "top_half_spread_bp": (best_ask - best_bid) / 2 / mid * 1e4,
                     "eff_half_spread_bp": (buy_vwap - sell_vwap) / 2 / mid * 1e4,  # サイズ込みの実効片道コスト
