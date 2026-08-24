@@ -9,3 +9,4 @@ runs/
 *.csv.gz
 .ipynb_checkpoints/
 .pytest_cache/
+data/cache/

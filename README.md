@@ -60,6 +60,33 @@ python scripts/backtest.py --config configs/default.yaml \
 python scripts/live_paper.py --config configs/default.yaml --models "runs/default/fold0_seed*.pt"
 ```
 
+## 動作確認済みの疎通例（合成データ・2 fold）
+
+```
+$ python scripts/train_walkforward.py --config configs/smoke.yaml --max-folds 2
+=========== ウォークフォワード集計 ===========
+fold 数           : 2
+RL Sharpe 平均    : +77.62  (中央値 +77.62)
+Sharpe > 0 の割合 : 100%
+シードばらつき σ  : 7.86
+ベースライン flat     : Sharpe 平均 +0.00
+ベースライン long     : Sharpe 平均 -82.23
+ベースライン momentum : Sharpe 平均 +75.97
+```
+
+**この数字は戦略の収益性を意味しない。** 合成データの生成モデルにトレンドを埋め込んで
+あるため、モメンタム則ですら Sharpe 76 が出る。ここで確認しているのは
+「学習が発散しないか / フラットに退行しないか / ベースラインと比較できているか」だけである。
+実データでの評価は必ず [採用ゲート](docs/strategy_design.md#8-採用ゲートこの数字を満たさなければ本番に出さない)で行うこと。
+
+## 計算コストの目安（CPU 4 コア）
+
+| 処理 | 規模 | 所要時間 |
+|---|---|---|
+| 特徴量生成 | 2 年 = 約 105 万バー | 約 64 秒（2 回目以降は `data/cache/` から即時） |
+| PPO 学習 | 20 万ステップ / 1 シード | 約 4 分 |
+| 本番設定 | 150 万ステップ × 5 シード × 8 fold | **数十時間**。まず `--max-folds 1` で確認してから回す |
+
 ## リポジトリ構成
 
 ```

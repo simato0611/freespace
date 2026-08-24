@@ -8,7 +8,9 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
+import pickle
 from pathlib import Path
 
 import numpy as np
@@ -25,8 +27,27 @@ from .metrics import summarize
 from .walkforward import Fold, make_folds
 
 
-def prepare_data(cfg: ExperimentConfig) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """OHLCV を読み込み、特徴量とメタ情報を返す。"""
+def prepare_data(cfg: ExperimentConfig, cache_dir: str | Path | None = "data/cache") -> tuple[pd.DataFrame, pd.DataFrame]:
+    """OHLCV を読み込み、特徴量とメタ情報を返す（結果はディスクにキャッシュする）。
+
+    2 年ぶんの 1 分足（約 105 万バー）で特徴量生成に 1 分強かかるため、
+    データ・特徴量設定のハッシュをキーにキャッシュする。設定を変えれば自動的に再計算される。
+    """
+    cache_path = None
+    if cache_dir is not None:
+        key = hashlib.sha1(
+            json.dumps(
+                {"data": dataclasses.asdict(cfg.data), "features": dataclasses.asdict(cfg.features)},
+                sort_keys=True, default=str,
+            ).encode()
+        ).hexdigest()[:16]
+        cache_path = Path(cache_dir) / f"features_{key}.pkl"
+        if cache_path.exists():
+            with cache_path.open("rb") as fh:
+                features, meta = pickle.load(fh)
+            print(f"[data] キャッシュを使用: {cache_path} bars={len(features):,}")
+            return features, meta
+
     if cfg.data.use_synthetic:
         ohlcv = make_synthetic_ohlcv(cfg.data.synthetic_minutes, seed=cfg.ppo.seed)
     else:
@@ -34,6 +55,10 @@ def prepare_data(cfg: ExperimentConfig) -> tuple[pd.DataFrame, pd.DataFrame]:
         ohlcv = ohlcv.loc[cfg.data.start : cfg.data.end]
     features, meta = build_features(ohlcv, cfg.features)
     print(f"[data] bars={len(features):,} 期間={features.index[0]} 〜 {features.index[-1]} 特徴量={features.shape[1]}")
+    if cache_path is not None:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with cache_path.open("wb") as fh:
+            pickle.dump((features, meta), fh, protocol=pickle.HIGHEST_PROTOCOL)
     return features, meta
 
 
