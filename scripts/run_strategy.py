@@ -84,6 +84,10 @@ def main() -> None:
     parser.add_argument("--assets", default=None, help="カンマ区切り（既定は全銘柄）")
     parser.add_argument("--start", default=None)
     parser.add_argument("--end", default=None)
+    parser.add_argument("--eval-from", default=None,
+                        help="計測開始日。これ以前はシグナルの助走にのみ使い、成績には含めない")
+    parser.add_argument("--warmup-days", type=int, default=180)
+    parser.add_argument("--benchmark", action="store_true", help="同期間の買い持ちも表示する")
     parser.add_argument("--grid", type=int, default=1, help="判断間隔（時間）")
     parser.add_argument("--band", type=float, default=0.10, help="建玉更新バンド")
     parser.add_argument("--target-vol", type=float, default=0.15)
@@ -97,8 +101,11 @@ def main() -> None:
 
     assets = [a.strip().upper() for a in args.assets.split(",")] if args.assets else None
     prices = load_prices(Path(args.data_dir), args.grid, assets)
-    if args.start or args.end:
-        prices = {a: df.loc[args.start:args.end] for a, df in prices.items()}
+    start = args.start
+    if args.eval_from:  # 助走ぶんだけ手前から読み込む（成績には含めない）
+        start = str((pd.Timestamp(args.eval_from, tz="UTC") - pd.Timedelta(days=args.warmup_days)).date())
+    if start or args.end:
+        prices = {a: df.loc[start:args.end] for a, df in prices.items()}
     prices = {a: df for a, df in prices.items() if len(df) > 24 * 90 // args.grid}
     if not prices:
         raise SystemExit("データがありません")
@@ -111,6 +118,10 @@ def main() -> None:
     )
     signals = build_signals(prices, args.grid, args.band, args.long_only, args.carry_avoidance)
     result = backtest_portfolio(prices, signals, grid_minutes, cfg)
+    if args.eval_from:  # 助走を切り落とし、エクイティを 1 から取り直す
+        result = result.loc[pd.Timestamp(args.eval_from, tz="UTC"):]
+        result["equity"] = 1e6 * (1 + result["ret"]).cumprod()
+        result["gross_equity"] = 1e6 * (1 + result["gross_pnl"]).cumprod()
     metrics = equity_metrics(result["equity"])
     days = len(result) * grid_minutes / 1440
 
@@ -142,6 +153,16 @@ def main() -> None:
         show[col] = (show[col] * 100).round(1).astype(str) + "%"
     print("\n年別:")
     print(show.to_string())
+
+    if args.benchmark:
+        bench_signals = {a: pd.Series(1.0, index=df.index) for a, df in prices.items()}
+        bench = backtest_portfolio(prices, bench_signals, grid_minutes, cfg)
+        if args.eval_from:
+            bench = bench.loc[pd.Timestamp(args.eval_from, tz="UTC"):]
+            bench["equity"] = 1e6 * (1 + bench["ret"]).cumprod()
+        bm = equity_metrics(bench["equity"])
+        print(f"\n  [参考] 同期間の買い持ち: Sharpe {bm['sharpe']:+.2f} / "
+              f"リターン {bm['total_return']:+.1%} / 最大DD {bm['max_drawdown']:+.1%}")
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
