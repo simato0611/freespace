@@ -46,22 +46,25 @@ def _realized_vol(returns: pd.Series, window: int, periods_per_year: float) -> p
     return returns.rolling(window, min_periods=max(5, window // 4)).std() * np.sqrt(periods_per_year)
 
 
-def backtest_portfolio(
+def compute_exposures(
     prices: dict[str, pd.DataFrame],
     signals: dict[str, pd.Series],
     grid_minutes: int,
     cfg: PortfolioConfig | None = None,
 ) -> pd.DataFrame:
-    """複数銘柄のポートフォリオをバックテストする。
+    """シグナルから、各銘柄の目標建玉（有効証拠金に対する倍率）を計算する。
+
+    **バックテストとライブ執行はこの関数を共有する**。サイジングを二重に実装すると
+    必ずズレる（設計書 9.1 節）。ライブ側は返り値の最終行だけを使う。
 
     Args:
-        prices: 銘柄名 → OHLCV（index は共通グリッドのクローズ時刻）。
-        signals: 銘柄名 → シグナル（-1〜1。時刻 t のクローズで確定し、t+1 の始値で執行）。
+        prices: 銘柄名 → OHLCV（共通グリッド）。
+        signals: 銘柄名 → シグナル（-1〜1）。
         grid_minutes: バーの長さ（分）。
         cfg: ポートフォリオ設定。
 
     Returns:
-        columns=[equity, gross_exposure, net_exposure, gross_pnl, cost, ret] の DataFrame。
+        index=時刻、columns=銘柄 の目標建玉。レバレッジ上限適用済み。
     """
     cfg = cfg or PortfolioConfig()
     periods_per_year = MINUTES_PER_YEAR / grid_minutes
@@ -98,6 +101,32 @@ def backtest_portfolio(
     gross = scaled.abs().sum(axis=1)
     over = (gross / cfg.leverage_cap).clip(lower=1.0)      # レバレッジ上限で頭打ち
     scaled = scaled.div(over, axis=0)
+    scaled.attrs["gap"] = gap
+    scaled.attrs["intra"] = intra
+    return scaled
+
+
+def backtest_portfolio(
+    prices: dict[str, pd.DataFrame],
+    signals: dict[str, pd.Series],
+    grid_minutes: int,
+    cfg: PortfolioConfig | None = None,
+) -> pd.DataFrame:
+    """複数銘柄のポートフォリオをバックテストする。
+
+    Args:
+        prices: 銘柄名 → OHLCV（index は共通グリッドのクローズ時刻）。
+        signals: 銘柄名 → シグナル（-1〜1。時刻 t のクローズで確定し、t+1 の始値で執行）。
+        grid_minutes: バーの長さ（分）。
+        cfg: ポートフォリオ設定。
+
+    Returns:
+        columns=[equity, gross_exposure, net_exposure, gross_pnl, cost, ret] の DataFrame。
+    """
+    cfg = cfg or PortfolioConfig()
+    scaled = compute_exposures(prices, signals, grid_minutes, cfg)
+    gap, intra = scaled.attrs["gap"], scaled.attrs["intra"]
+    index = scaled.index
 
     one_way = (cfg.cost.half_spread_bp + cfg.cost.slippage_bp + cfg.cost.taker_fee_bp) * 1e-4
     turnover = (scaled - scaled.shift(1)).abs().sum(axis=1).fillna(0.0)
