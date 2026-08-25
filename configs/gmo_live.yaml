@@ -61,11 +61,15 @@ risk:
   max_half_spread_bp: 8.0          # 板が壊れているときは執行しない
   max_data_staleness_sec: 300      # 1 時間判断なので鮮度の許容は緩め
   min_margin_ratio: 1.5
-  min_trade_delta: 0.05
+  min_trade_delta: 0.005           # これ未満の建玉変更は発注しない（scripts/trade_frequency.py で較正）
+                                   # 銘柄あたりの建玉が 0.03〜0.07 なので 0.05 では粗すぎる。
+                                   # 0.005 なら連続リバランスと同じ成績を保ったまま
+                                   # 発注を 1 日 120 回 → 11 回に落とせる（両時代で確認）
 
 monitoring:
   # 想定から外れたら止めるための基準（docs/strategy_design.md 9.3 節）
   expected_turnover_per_day: 0.20  # 実測がこの 2 倍を超えたら異常
   expected_ann_vol: 0.15           # 実測が 0.25 を超えたらサイズを見直す
+  expected_orders_per_day: 12.0     # 5 銘柄合計。実測がこの 2 倍を超えたら設定ミスを疑う
   expected_gross_exposure: 0.24
   review_interval_days: 30

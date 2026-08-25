@@ -43,7 +43,9 @@ class LiveConfig:
     target_vol_ann: float = 0.15
     max_weight: float = 0.5
     leverage_cap: float = 2.0
-    min_trade_delta: float = 0.05      # これ未満の建玉変更は発注しない
+    min_trade_delta: float = 0.005     # これ未満の建玉変更は発注しない。
+                                       # 大きすぎると建玉が目標から離れ、小さすぎると
+                                       # 無意味な微調整を毎時間出すことになる（実測で 0.005 が最適）
     cost: CostConfig = field(default_factory=lambda: CostConfig(half_spread_bp=1.5, slippage_bp=0.0))
 
     def portfolio_config(self) -> PortfolioConfig:

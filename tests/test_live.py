@@ -155,3 +155,47 @@ def test_risk_decision_is_interpreted_correctly(reasons, halted, size, expect_ho
     flatten = halted or (size == 0.0 and not hold_only)
     assert hold_only is expect_hold
     assert flatten is expect_flatten
+
+
+# ------------------------------------------------------------------ 最小発注幅の較正
+def _simulate(targets: pd.DataFrame, delta: float, engine: StrategyEngine) -> tuple[int, float]:
+    """目標建玉の系列を 1 本ずつ流し、発注回数と目標からの最大乖離を返す。"""
+    held = {s: 0.0 for s in targets.columns}
+    orders, worst = 0, 0.0
+    for _, row in targets.iterrows():
+        target = {s: float(row[s]) for s in targets.columns}
+        issued = engine.orders(target, held, 1_000_000, {s: 1e6 for s in targets.columns})
+        orders += len(issued)
+        for order in issued:
+            held[order.symbol] = order.target_exposure
+        worst = max(worst, max(abs(target[s] - held[s]) for s in targets.columns))
+    return orders, worst
+
+
+def test_min_trade_delta_cuts_orders_without_losing_the_target():
+    """最小発注幅は「無意味な発注を落とすフィルタ」であること。
+
+    0.005 なら発注回数が 1 桁減るのに、建玉は常に目標の 0.005 以内にいる。
+    既定を 0.05 まで上げると、銘柄あたりの建玉（0.03〜0.07）より粗くなり、
+    目標から離れたまま放置される。
+    """
+    symbols = ("A", "B", "C")
+    bars = make_bars(list(symbols), seed=11)
+    base = LiveConfig(symbols=symbols)
+    assert base.min_trade_delta == 0.005
+
+    engine = StrategyEngine(base)
+    resampled = engine.resample(bars)
+    signals = {s: apply_rebalance_band(ladder_signal(df, 24, base.lookback_days, base.long_only,
+                                                     base.gain, base.vol_window_bars), base.rebalance_band)
+               for s, df in resampled.items()}
+    targets = compute_exposures(resampled, signals, 60, base.portfolio_config()).iloc[-500:]
+
+    tight, tight_gap = _simulate(targets, 0.005, StrategyEngine(base))
+    coarse, coarse_gap = _simulate(targets, 0.05, StrategyEngine(LiveConfig(symbols=symbols, min_trade_delta=0.05)))
+
+    continuous = len(targets) * len(symbols)
+    assert tight < continuous / 5          # 連続リバランスより 1 桁近く少ない
+    assert tight_gap <= 0.005 + 1e-9       # それでも目標から離れない
+    assert coarse < tight                  # 粗い方が発注は減るが……
+    assert coarse_gap > tight_gap * 3      # ……建玉が目標から大きく離れる

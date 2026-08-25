@@ -177,7 +177,7 @@ def load_config(path: Path) -> tuple[LiveConfig, RiskLimits, dict]:
         target_vol_ann=float(s.get("target_vol_ann", 0.15)),
         max_weight=float(s.get("max_weight", 0.5)),
         leverage_cap=float(s.get("leverage_cap", 2.0)),
-        min_trade_delta=float(r.get("min_trade_delta", 0.05)),
+        min_trade_delta=float(r.get("min_trade_delta", 0.005)),
         cost=CostConfig(half_spread_bp=float(c.get("half_spread_bp", 1.5)),
                         slippage_bp=float(c.get("slippage_bp", 0.0)),
                         carry_rate_daily=float(c.get("carry_rate_daily", 0.0004)),
@@ -192,7 +192,7 @@ def load_config(path: Path) -> tuple[LiveConfig, RiskLimits, dict]:
         max_half_spread_bp=float(r.get("max_half_spread_bp", 8.0)),
         max_data_staleness_sec=int(r.get("max_data_staleness_sec", 300)),
         min_margin_ratio=float(r.get("min_margin_ratio", 1.5)),
-        min_trade_delta=float(r.get("min_trade_delta", 0.05)),
+        min_trade_delta=float(r.get("min_trade_delta", 0.005)),
     )
     return live, limits, raw
 
