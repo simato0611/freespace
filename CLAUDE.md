@@ -33,7 +33,8 @@ GMO コインのレバレッジ取引（5 銘柄）向けの、複数銘柄ト�
 
 ```bash
 pip install -e .
-python -m pytest tests -q      # 73 件。変更前後で必ず通すこと
+python -m pytest tests -q                    # 73 件。変更前後で必ず通すこと
+python data/handoff/verify_bundle.py --repo . # 基準データと基準の数字を確認
 ```
 
 - パラメータの唯一の正は `configs/gmo_live.yaml`。コードにハードコードしない
@@ -46,6 +47,7 @@ python -m pytest tests -q      # 73 件。変更前後で必ず通すこと
 | ファイル | 役割 |
 |---|---|
 | `docs/HANDOFF.md` | **引き継ぎ資料。まずこれ** |
+| `data/handoff/` | 検証の基準になる価格データ一式。`verify_bundle.py` で完全性を確認できる |
 | `configs/gmo_live.yaml` | 本番設定。パラメータの唯一の正 |
 | `src/rlgmo/portfolio.py` | 戦略の核。`compute_exposures()` をライブと共有 |
 | `src/rlgmo/live.py` | ライブ執行ロジック。GMO の決済/新規の分割もここ |

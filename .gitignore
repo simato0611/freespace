@@ -4,8 +4,13 @@ __pycache__/
 venv/
 data/raw/
 data/processed/
+# 引き継ぎ用の基準データだけは追跡する（clone しただけで検証が走るようにするため）
+!data/handoff/
+!data/handoff/**
+
 runs/
 *.parquet
+!data/handoff/**/*.parquet
 *.csv.gz
 .ipynb_checkpoints/
 .pytest_cache/

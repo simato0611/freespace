@@ -148,15 +148,31 @@ signal   = mean(trend(5), trend(14), trend(30), trend(60)) / 1.5    → [−1, +
 
 ## 3. Desktop でやること（この順序で）
 
-### ステップ 1 — 環境確認とテスト
+### ステップ 1 — 環境確認と、基準データの検証
 
 ```bash
 git checkout claude/rl-crypto-trading-strategy-hb5qqb
 pip install -e .            # または pip install -r requirements.txt
 python -m pytest tests -q   # 73 件全通過するはず
+
+# 基準データの完全性と、基準の数字が再現できるかを確認する
+python data/handoff/verify_bundle.py --repo .
 ```
 
-**判定**: 通らなければ環境の問題。先へ進まない。
+検証の基準になる価格データは `data/handoff/` に同梱してある（`git clone` だけで手に入る）。
+中身の説明は [`data/handoff/MANIFEST.md`](../data/handoff/MANIFEST.md)。既存スクリプトが
+期待するパスに置くなら:
+
+```bash
+mkdir -p data/raw
+cp -r data/handoff/prices/perp_1h        data/raw/perp
+cp -r data/handoff/prices/alt2017_1h     data/raw/alt2017_1h
+cp -r data/handoff/prices/verify_sources data/raw/verify_sources
+```
+
+**判定**: テストが 73 件通り、`verify_bundle.py` が
+「全期間 1.577 / 開発期間 1.696 / ホールドアウト 1.059」を再現すること。
+**再現しないまま GMO のデータを取っても、食い違いの原因を切り分けられない。**
 
 ### ステップ 2 — GMO 実データの取得 ★最重要
 
