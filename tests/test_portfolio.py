@@ -95,3 +95,53 @@ def test_trend_signal_is_long_only_and_bounded():
     both = trend_signal(prices["a"], 84, long_only=False)
     assert both.min() >= -1.0 and both.max() <= 1.0
     assert both.mean() > 0  # 上昇ドリフトを与えたので平均はプラス
+
+
+def test_ladder_signal_averages_multiple_horizons():
+    """ラダーは各ルックバックの平均であり、単一ルックバックより滑らかになる。"""
+    from rlgmo.portfolio import LADDER_DAYS, ladder_signal
+
+    prices = make_prices({"a": gbm(3000, 0.01, 21, drift=0.0005)})
+    df = prices["a"]
+    single = trend_signal(df, 14 * 6, long_only=False)
+    ladder = ladder_signal(df, bars_per_day=6, long_only=False)
+    assert len(ladder) == len(df)
+    assert ladder.abs().max() <= 1.0
+    # 平均を取っているぶん、単一ルックバックより符号の反転が少ない
+    assert (np.sign(ladder).diff() != 0).sum() < (np.sign(single).diff() != 0).sum()
+    manual = pd.concat([trend_signal(df, int(d * 6), long_only=False) for d in LADDER_DAYS], axis=1).mean(axis=1)
+    pd.testing.assert_series_equal(ladder, manual)
+
+
+def test_rebalance_band_reduces_updates():
+    from rlgmo.portfolio import apply_rebalance_band
+
+    raw = pd.Series(np.sin(np.arange(500) / 7) * 0.5, index=pd.date_range("2024-01-01", periods=500, freq="1h", tz="UTC"))
+    banded = apply_rebalance_band(raw, width=0.2)
+    assert (banded.diff().abs() > 1e-12).sum() < (raw.diff().abs() > 1e-12).sum()
+    # 更新した時点では必ず目標値そのものになっている
+    changed = banded.diff().abs() > 1e-12
+    assert np.allclose(banded[changed], raw[changed])
+
+
+def test_carry_avoidance_mask_zeroes_only_the_charged_bar():
+    from rlgmo.portfolio import carry_avoidance_mask
+
+    idx = pd.date_range("2026-03-01", periods=24 * 5, freq="1h", tz="UTC")
+    mask = carry_avoidance_mask(idx)
+    assert mask.sum() == len(idx) - 5           # 1 日 1 本だけ 0
+    zeroed = pd.DatetimeIndex(idx[mask == 0]).tz_convert("Asia/Tokyo")
+    assert set(zeroed.hour) == {6}
+
+
+def test_ladder_long_short_beats_long_only_in_a_downtrend():
+    """下降トレンドでは、両建てのほうがロングオンリーより損益が良い。"""
+    from rlgmo.portfolio import ladder_signal
+
+    n = 2000
+    path = 100 * np.exp(np.cumsum(np.full(n, -0.0008) + np.random.default_rng(5).standard_normal(n) * 0.004))
+    prices = make_prices({"a": path}, freq="1h")
+    cfg = PortfolioConfig(cost=ZERO_COST)
+    ls = backtest_portfolio(prices, {"a": ladder_signal(prices["a"], 24, long_only=False)}, 60, cfg)
+    lo = backtest_portfolio(prices, {"a": ladder_signal(prices["a"], 24, long_only=True)}, 60, cfg)
+    assert ls["equity"].iloc[-1] > lo["equity"].iloc[-1]

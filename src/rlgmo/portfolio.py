@@ -131,3 +131,61 @@ def trend_signal(df: pd.DataFrame, lookback_bars: int, long_only: bool = True,
     signal = (log_close - log_close.shift(lookback_bars)) / (vol * np.sqrt(lookback_bars))
     signal = (signal / gain).clip(-1, 1).fillna(0.0)
     return signal.clip(lower=0) if long_only else signal
+
+
+# --------------------------------------------------------------------------- シグナル構築
+LADDER_DAYS = (5, 14, 30, 60)
+
+
+def ladder_signal(
+    df: pd.DataFrame,
+    bars_per_day: int,
+    lookback_days: tuple[float, ...] = LADDER_DAYS,
+    long_only: bool = False,
+    gain: float = 1.5,
+    vol_window: int = 30,
+) -> pd.Series:
+    """複数ルックバックのトレンドを平均した「ラダー」シグナル。
+
+    単一のルックバック（例 14 日）を選ぶと、その値への当てはめリスクが残る。
+    5/14/30/60 日を等ウェイトで平均すると、**どの周期のトレンドにも部分的に乗る**ため、
+    パラメータ選択の影響が薄まり、実測でも 2 つの独立した時代の両方で成績が上がった
+    （時代A 0.94→1.01、時代B 1.59→1.86）。
+
+    `long_only=False`（両建て）が既定である点に注意。単一銘柄ではショート側は負けるが、
+    **複数銘柄に分散すると下落局面の収益源になる**（2018 年 Sharpe −0.13→+1.74、
+    2022 年 +0.52→+1.09）。詳細は `docs/strategy_search.md`。
+    """
+    parts = [trend_signal(df, max(2, int(d * bars_per_day)), long_only=False, gain=gain, vol_window=vol_window)
+             for d in lookback_days]
+    combined = pd.concat(parts, axis=1).mean(axis=1)
+    return combined.clip(lower=0) if long_only else combined
+
+
+def apply_rebalance_band(signal: pd.Series, width: float = 0.10) -> pd.Series:
+    """目標が一定幅を超えて動いたときだけ建玉を更新する（回転率の削減）。
+
+    毎バー律儀に建て直すと、シグナルの微小な揺れにスプレッドを払い続ける。
+    幅 0.10 で回転率が 0.27 → 0.18 回/日に下がり、成績はむしろ僅かに改善した。
+    """
+    values = np.array(signal.to_numpy(), dtype=float, copy=True)
+    current = 0.0
+    for i, target in enumerate(values):
+        if not np.isfinite(target):
+            target = current
+        if abs(target - current) > width:
+            current = float(target)
+        values[i] = current
+    return pd.Series(values, index=signal.index)
+
+
+def carry_avoidance_mask(index: pd.DatetimeIndex, hour_jst: int = 6) -> pd.Series:
+    """建玉管理料の課金時刻をまたぐバーだけフラットにするマスク。
+
+    GMO の建玉管理料は「JST 06:00 時点の建玉」に 0.04% 課される。その 1 本だけ
+    建玉を落とせば課金を避けられる。ただし**往復コストが 4bp を下回る場合しか得しない**
+    （実測: 片道 1.0bp なら Sharpe +0.15、片道 2.5bp なら −0.03 で逆効果）。
+    指値がほぼ確実に約定する運用でのみ有効。既定では使わないこと。
+    """
+    flags = carry_flags(pd.DatetimeIndex(index), hour_jst)
+    return pd.Series((~flags).astype(float), index=index)
