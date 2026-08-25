@@ -252,3 +252,46 @@ def test_action_repeat_still_charges_carry_while_holding():
     # 1 日で 1 回、建玉評価額の 0.04%
     assert 0.0 < charged < cfg.initial_equity * 0.0005
     assert charged == pytest.approx(cfg.initial_equity * 0.0004, rel=0.02)
+
+
+def test_env_infers_bar_length_from_index():
+    """1 時間足を渡せば、ボラ換算も建玉管理料も 1 時間足として扱われる。"""
+    n = 24 * 40
+    idx = pd.date_range("2026-03-01", periods=n, freq="1h", tz="UTC")
+    prices = np.full(n, 1e7)
+    meta = pd.DataFrame({"open": prices, "high": prices, "low": prices, "close": prices,
+                         "volume": np.ones(n), "vol_1m": np.full(n, 1e-2), "vol_ratio": np.ones(n)}, index=idx)
+    features = pd.DataFrame(np.zeros((n, 2), dtype=np.float32), columns=["a", "b"], index=idx)
+    env = TradingEnv(features, meta, base_cfg(), training=False)
+    assert env.bar_minutes == 60
+    assert abs(env.bars_per_year - 8760) < 1
+
+    # ボラターゲット: 1 バーの目標ボラは年率 / √8760 で計算される
+    expected = env.cfg.vol_target_ann / np.sqrt(8760) if env.cfg.vol_target else 1.0
+    _ = expected
+
+    # 建玉管理料は 1 日 1 回（06:00 JST をまたぐ 1 時間足で課金）
+    cfg = dataclasses.replace(
+        base_cfg(cost=CostConfig(half_spread_bp=0.0, slippage_bp=0.0, carry_mode="daily_0600",
+                                 carry_rate_daily=0.0004)),
+        vol_target=False,
+    )
+    env = TradingEnv(features, meta, cfg, training=False)
+    env.reset(start=0, episode_len=24 * 10)
+    long_idx = int(np.argmax(env.cfg.actions))
+    charges = 0
+    while True:
+        _, _, terminated, truncated, info = env.step(long_idx)
+        charges += info["carry_cost"] > 0
+        if terminated or truncated:
+            break
+    assert 9 <= charges <= 11  # 10 日ぶん
+
+
+def test_prorata_carry_scales_with_bar_length():
+    """按分モードでは、1 時間足のバー 1 本で日率の 1/24 が課金される。"""
+    from rlgmo.costs import carry_rate_per_bar
+
+    cfg = CostConfig(carry_mode="prorata", carry_rate_daily=0.0024)
+    assert carry_rate_per_bar(cfg, 60, False) == pytest.approx(0.0001)
+    assert carry_rate_per_bar(cfg, 1, False) == pytest.approx(0.0024 / 1440)

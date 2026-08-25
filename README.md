@@ -5,7 +5,14 @@ GMO コインのレバレッジ取引（`BTC_JPY` 等）を対象に、**1 分�
 
 📄 **設計の本体は [`docs/strategy_design.md`](docs/strategy_design.md)**（MDP 定式化・コスト算術・検証プロトコル・採用ゲート・失敗モード）。
 
-⚠️ **実データでの検証結果は [`docs/real_data_findings.md`](docs/real_data_findings.md)。**
+🔎 **戦略探索と最終判定は [`docs/strategy_search.md`](docs/strategy_search.md)。**
+優位性が存在する時間軸を探した結果、**多日スケールのロングオンリー・トレンドフォロー**を発見:
+開発期間（BTC 8.5 年）Sharpe **+1.44**、他 6 銘柄でもパラメータ無変更で **6/6 プラス**。
+ただし**封印していたホールドアウト 14 ヶ月では Sharpe −0.75** で採用ゲートを満たさない
+（この不調の大きさは 2018 年・2022 年と同程度で、分布の外ではない）。**現時点では実運用しない。**
+なお同じ情報セットで学習した PPO は、この単純ルール（10 fold 平均 +0.61）に **+0.36** で負けている。
+
+⚠️ **短期（1〜15 分足）の検証結果は [`docs/real_data_findings.md`](docs/real_data_findings.md)。**
 BTC/USD 1 分足 153 万バー（2023-06〜2026-08）でウォークフォワード検証した結果:
 
 | 判断間隔 | fold | OOS日数 | 純リターン | Sharpe | 回転/日 | グロス/年 | 取引コスト/年 |
@@ -148,7 +155,18 @@ src/rlgmo/
   metrics.py                Sharpe・DD・回転率・Deflated Sharpe
   pipeline.py               データ→学習→検証→テストの一連の流れ
 
-scripts/                    fetch_data / measure_spread / train_walkforward / backtest / live_paper
+scripts/
+  fetch_data.py             GMO Public API から 1 分足を取得
+  import_bitstamp.py        公開データセット（BTC/USD 1分足）の取り込み
+  signal_survey.py          仮説探索: 素朴なシグナルを実コスト込みで横並び比較
+  analyze_data.py           予測力の直接測定（Ridge / GBDT の OOS R²・IC）
+  cross_asset_check.py      同一ルールを他銘柄へ（パラメータ無変更で確認）
+  train_walkforward.py      ウォークフォワード学習
+  train_final.py            ホールドアウト直前までのデータで最終モデルを学習
+  reevaluate_folds.py       再学習せずに評価だけ取り直す
+  backtest.py / stress_test.py / cost_sweep.py / aggregate_runs.py
+  final_holdout.py          封印期間で一度だけ評価する
+  measure_spread.py / live_paper.py
 tests/                      28 テスト（環境の会計、特徴量の因果性、リスク、指標、分割）
 ```
 

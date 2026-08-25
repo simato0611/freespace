@@ -1,0 +1,99 @@
+# ============================================================================
+# 多日スケール（トレンド）版
+#   実データ検証で、優位性があるのは 1〜15 分足ではなく多日スケールの時系列
+#   モメンタムだと分かった（scripts/signal_survey.py: 4時間グリッドで mom_14d が
+#   net Sharpe 1.19 / 最大DD -17% / 9年中8年プラス）。
+#   そこで基準グリッドを 60 分にし、1時間/4時間/日足の特徴量で 4 時間ごとに判断する。
+#
+#   ホールドアウト（2025-07-01 以降）は探索に使わない。data.end で封印している。
+# ============================================================================
+data:
+  symbol: BTCUSD_bitstamp
+  interval: 1min
+  path: data/raw/BTCUSD_bitstamp_1min_full.parquet
+  start: "2017-01-01"
+  end: "2025-06-30"          # ← ホールドアウト封印線。触らないこと
+  use_synthetic: false
+
+features:
+  base_minutes: 60           # 基準グリッド = 1 時間足
+  timeframes: [1, 4, 24]     # 1時間 / 4時間 / 日足
+  ret_lags: [1, 2, 3, 5, 10, 20]   # 日足では最長 20 日ぶんの情報になる
+  vol_span: 30
+  atr_period: 14
+  rsi_period: 14
+  donchian: 48
+  effr_period: 20
+  ofi_period: 20
+  vwap_period: 24
+  scale_window: 2160         # 90 日ぶん（1時間足 × 2160）
+  clip: 5.0
+  carry_hour_jst: 6
+
+env:
+  leverage_cap: 2.0
+  actions: [-1.0, -0.5, 0.0, 0.5, 1.0]
+  action_repeat: 4           # 4 時間に 1 回判断（signal_survey で最も成績が良かった間隔）
+  episode_len: 720           # 30 日 = 判断 180 回
+  initial_equity: 1000000.0
+  maintenance_margin: 0.75
+  daily_loss_limit: 0.05     # 多日保有なので日次上限は緩める
+  vol_target: true
+  vol_target_ann: 0.20
+  vol_scale_cap: 1.0
+  rebalance_tolerance: 0.05
+  randomize_costs: true
+  cost_jitter: 0.5
+  reward:
+    kind: logret
+    vol_norm: true
+    target_vol_ann: 0.20
+    turnover_penalty: 0.0002
+    dd_penalty: 0.5
+  cost:
+    half_spread_bp: 2.0
+    slippage_bp: 0.5
+    taker_fee_bp: 0.0
+    carry_rate_daily: 0.0004
+    carry_mode: daily_0600
+    spread_vol_beta: 1.0
+
+ppo:
+  lr: 0.0003
+  n_steps: 256
+  batch_size: 512
+  epochs: 4
+  gamma: 0.99                # 判断 100 回 = 400 時間 ≒ 17 日
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.01
+  ent_coef_max: 0.1
+  ent_target_start: 0.6
+  ent_target_final: 0.05
+  adaptive_entropy: true
+  explore_eps_start: 0.10
+  explore_eps_final: 0.01
+  cost_curriculum_start: 0.5
+  cost_curriculum_frac: 0.2
+  bc_steps: 20000
+  hidden: [128, 64]          # サンプル数が少ないので小さく
+  dropout: 0.2
+  device: cpu
+
+walkforward:
+  train_days: 540
+  valid_days: 180
+  test_days: 180
+  step_days: 180
+  embargo_hours: 72
+
+train:
+  total_steps: 40000
+  n_envs: 8
+  seeds: [0, 1, 2]
+  eval_every: 10000
+  episode_len: 720
+  confidence: 0.15
+  teacher_feature: ret_10_1d     # 10 日モメンタム（教師とベースライン）
+  teacher_threshold: 0.5
+  out_dir: runs/btc_trend

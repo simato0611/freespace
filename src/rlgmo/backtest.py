@@ -118,6 +118,54 @@ def momentum_policy(env: TradingEnv, feature: str = "ret_10_15m", threshold: flo
     return policy
 
 
+def trend_policy(
+    env: TradingEnv,
+    lookback_bars: int,
+    long_only: bool = True,
+    gain: float = 1.5,
+    vol_window: int = 30,
+) -> Policy:
+    """時系列モメンタム（トレンドフォロー）のルールベース方策。
+
+    実データ検証で見つかった唯一の優位性（`docs/real_data_findings.md` 5 節、
+    `scripts/signal_survey.py`）をそのまま方策にしたもの。RL の比較対象であり、
+    現時点では**これ自体が最有力の戦略**である。
+
+        シグナル = 過去 lookback_bars のログリターン / (1バーのボラ × √lookback)
+        目標ポジション = clip(シグナル / gain, -1, 1)   （long_only なら下限 0）
+
+    価格系列は環境が保持しているものをそのまま使うため、特徴量セットに依存しない。
+    サイズ調整（ボラターゲット）とコストは環境側が担当する。
+
+    Args:
+        env: 対象の環境（価格系列と現在位置を参照する）。
+        lookback_bars: モメンタムのルックバック（環境のバー単位）。
+        long_only: True ならショートしない。実測ではショート側が負けている。
+        gain: シグナルを目標ポジションに変換する際の除数。小さいほど強気に建てる。
+        vol_window: ボラ推定の窓（バー数）。
+
+    Returns:
+        観測 → 行動インデックス の関数。
+    """
+    close = env._close
+    log_close = np.log(close)
+    logret = np.diff(log_close, prepend=log_close[0])
+    vol = pd.Series(logret).rolling(vol_window, min_periods=vol_window // 2).std().to_numpy()
+    ret = np.full_like(log_close, np.nan)
+    ret[lookback_bars:] = log_close[lookback_bars:] - log_close[:-lookback_bars]
+    with np.errstate(invalid="ignore", divide="ignore"):
+        signal = ret / (vol * np.sqrt(lookback_bars))
+    signal = np.nan_to_num(np.clip(signal / gain, -1.0, 1.0), nan=0.0)
+    if long_only:
+        signal = np.clip(signal, 0.0, 1.0)
+    values = np.asarray(env.cfg.actions, dtype=float)
+
+    def policy(obs: np.ndarray) -> int:
+        return int(np.argmin(np.abs(values - signal[env._t])))
+
+    return policy
+
+
 def random_policy(n_actions: int, seed: int = 0) -> Policy:
     rng = np.random.default_rng(seed)
     return lambda obs: int(rng.integers(n_actions))

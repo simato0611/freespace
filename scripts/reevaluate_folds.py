@@ -58,7 +58,7 @@ def main() -> None:
         for name, base in {
             "flat": flat_policy(cfg.env.actions),
             "long": long_policy(cfg.env.actions),
-            "momentum": momentum_policy(test_env),
+            "momentum": momentum_policy(test_env, cfg.train.teacher_feature, cfg.train.teacher_threshold),
         }.items():
             _, bm = evaluate_policy(make_env(features, meta, fold.test, cfg.env, training=False), base)
             row[f"{name}_sharpe"] = bm.get("sharpe", 0.0)

@@ -41,6 +41,8 @@ class TrainConfig:
     eval_every: int = 100_000
     episode_len: int = 1440
     confidence: float = 0.15         # アンサンブル期待ポジションの発注閾値
+    teacher_feature: str = "ret_10_15m"  # 行動クローニングの教師とベースラインに使う特徴量
+    teacher_threshold: float = 0.5
     out_dir: str = "runs/default"
 
 

@@ -29,8 +29,21 @@ BOUNDED_PREFIX = ("ret_", "rsi_", "donch_", "body_", "effr_", "ofi_", "sin_", "c
 
 @dataclass
 class FeatureConfig:
-    """特徴量生成の設定。"""
+    """特徴量生成の設定。
 
+    `base_minutes` は特徴量を作る基準グリッド（分）。1 なら 1 分足そのまま。
+    `timeframes` は**基準グリッドの倍数**で指定する。例:
+
+        base_minutes=1,  timeframes=(1, 5, 15)   → 1分/5分/15分足（短期戦略）
+        base_minutes=60, timeframes=(1, 4, 24)   → 1時間/4時間/日足（多日スケール戦略）
+
+    実データ検証（`docs/real_data_findings.md`）で分かったとおり、1〜15 分足だけの
+    特徴量は最長でも 5 時間ぶんの情報しか持たず、コストを超える予測力が無い。
+    多日スケールの時系列モメンタムには優位性があるため、基準グリッドを粗くして
+    そちらを見られるようにしている。
+    """
+
+    base_minutes: int = 1
     timeframes: tuple[int, ...] = (1, 5, 15)
     ret_lags: tuple[int, ...] = (1, 2, 3, 5, 10, 20)
     vol_span: int = 60          # 各タイムフレームでの EWMA ボラのスパン（バー数）
@@ -110,7 +123,16 @@ def causal_robust_scale(df: pd.DataFrame, window: int, clip: float) -> pd.DataFr
 # タイムフレームごとのブロック
 # --------------------------------------------------------------------------------------
 def timeframe_block(df: pd.DataFrame, cfg: FeatureConfig, tf: int) -> pd.DataFrame:
-    """1 つのタイムフレームぶんの特徴量を作る（index はそのタイムフレームのクローズ時刻）。"""
+    """1 つのタイムフレームぶんの特徴量を作る（index はそのタイムフレームのクローズ時刻）。
+
+    Args:
+        df: そのタイムフレームの OHLCV。
+        cfg: 設定。
+        tf: 基準グリッドの倍数（`minutes_per_bar = tf * cfg.base_minutes`）。
+    """
+    minutes_per_bar = tf * cfg.base_minutes
+    # 「平常時の水準」を測る窓: 日中足なら 1 日ぶん、日足以上なら 30 本を下限にする
+    baseline = max(30, 1440 // max(minutes_per_bar, 1))
     close = df["close"]
     logret = np.log(close).diff()
     vol = ewma_vol(logret, cfg.vol_span)
@@ -131,13 +153,14 @@ def timeframe_block(df: pd.DataFrame, cfg: FeatureConfig, tf: int) -> pd.DataFra
 
     # --- ボラティリティ
     out["atr_rel"] = a / close                              # 価格に対する ATR（水準）
-    out["volratio"] = np.log(vol / vol.rolling(60 * 24 // tf, min_periods=30).mean())  # 平常比
+    out["volratio"] = np.log(vol / vol.rolling(baseline, min_periods=max(10, baseline // 4)).mean())
     park = np.log(df["high"] / df["low"]) ** 2 / (4 * np.log(2))
     out["park_ratio"] = np.log(np.sqrt(park.rolling(12).mean()) / vol.replace(0.0, np.nan))
 
     # --- 出来高 / オーダーフロー代理
     out["ofi"] = signed_volume_imbalance(df, cfg.ofi_period)
-    out["logvol"] = np.log1p(df["volume"]) - np.log1p(df["volume"]).rolling(60 * 24 // tf, min_periods=30).mean()
+    out["logvol"] = np.log1p(df["volume"]) - np.log1p(df["volume"]).rolling(
+        baseline, min_periods=max(10, baseline // 4)).mean()
 
     # --- ローソク形状 / トレンド品質
     out["body_ratio"] = (close - df["open"]) / (df["high"] - df["low"]).replace(0.0, np.nan)
@@ -179,24 +202,27 @@ def build_features(ohlcv_1m: pd.DataFrame, cfg: FeatureConfig | None = None) -> 
             meta: 環境が使う列（open/high/low/close/volume/vol_ratio/vol_1m）。features と同じ index。
     """
     cfg = cfg or FeatureConfig()
-    base_index = pd.DatetimeIndex(ohlcv_1m.index)
+    base = ohlcv_1m if cfg.base_minutes == 1 else resample_ohlcv(ohlcv_1m, cfg.base_minutes)
+    base_index = pd.DatetimeIndex(base.index)
     blocks = []
     for tf in cfg.timeframes:
-        src = ohlcv_1m if tf == 1 else resample_ohlcv(ohlcv_1m, tf)
+        minutes = tf * cfg.base_minutes
+        src = base if tf == 1 else resample_ohlcv(base, minutes)
         block = timeframe_block(src, cfg, tf)
+        suffix = f"_{minutes}m" if minutes < 1440 else f"_{minutes // 1440}d"
         if tf == 1:
-            block.columns = [f"{c}_1m" for c in block.columns]
+            block.columns = [f"{c}{suffix}" for c in block.columns]
             blocks.append(block)
         else:
-            blocks.append(align_to_base(base_index, block, f"_{tf}m"))
+            blocks.append(align_to_base(base_index, block, suffix))
 
-    # 1 分足の VWAP 乖離（執行タイミングの手掛かり）
-    typical = (ohlcv_1m["high"] + ohlcv_1m["low"] + ohlcv_1m["close"]) / 3
-    vwap = (typical * ohlcv_1m["volume"]).rolling(cfg.vwap_period).sum() / ohlcv_1m["volume"].rolling(
+    # 基準グリッドでの VWAP 乖離（執行タイミングの手掛かり）
+    typical = (base["high"] + base["low"] + base["close"]) / 3
+    vwap = (typical * base["volume"]).rolling(cfg.vwap_period).sum() / base["volume"].rolling(
         cfg.vwap_period
     ).sum().replace(0.0, np.nan)
-    a1 = atr(ohlcv_1m, cfg.atr_period)
-    extra = pd.DataFrame({"vwapdev": (ohlcv_1m["close"] - vwap) / a1}, index=base_index)
+    a1 = atr(base, cfg.atr_period)
+    extra = pd.DataFrame({"vwapdev": (base["close"] - vwap) / a1}, index=base_index)
 
     feats = pd.concat(blocks + [extra], axis=1).replace([np.inf, -np.inf], np.nan)
 
@@ -209,12 +235,13 @@ def build_features(ohlcv_1m: pd.DataFrame, cfg: FeatureConfig | None = None) -> 
 
     scaled = pd.concat([scaled, time_features(base_index, cfg)], axis=1)
 
-    # メタ情報: 執行価格とコストモデル用
-    ret_1m = np.log(ohlcv_1m["close"]).diff()
-    vol_1m = ewma_vol(ret_1m, cfg.vol_span)
-    meta = ohlcv_1m.copy()
-    meta["vol_1m"] = vol_1m
-    meta["vol_ratio"] = vol_1m / vol_1m.rolling(60 * 24 * 7, min_periods=60 * 24).median()
+    # メタ情報: 執行価格とコストモデル用（すべて基準グリッド）
+    base_ret = np.log(base["close"]).diff()
+    base_vol = ewma_vol(base_ret, cfg.vol_span)
+    long_window = max(60, 60 * 24 * 7 // max(cfg.base_minutes, 1))
+    meta = base.copy()
+    meta["vol_1m"] = base_vol          # 「1 バーあたりの実現ボラ」（列名は互換性のため据え置き）
+    meta["vol_ratio"] = base_vol / base_vol.rolling(long_window, min_periods=long_window // 8).median()
 
     valid = scaled.dropna().index.intersection(meta.dropna().index)
     return scaled.loc[valid].astype(np.float32), meta.loc[valid]

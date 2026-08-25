@@ -93,7 +93,8 @@ def train_fold(
     agent = PPOAgent(vec.observation_dim, vec.n_actions, ppo_cfg)
     if ppo_cfg.bc_steps > 0:
         # 「常にフラット」の局所解を避けるため、粗いモメンタム則を模倣してから PPO を始める
-        agent.pretrain(vec, momentum_policy(train_envs[0]), steps=ppo_cfg.bc_steps)
+        teacher = momentum_policy(train_envs[0], cfg.train.teacher_feature, cfg.train.teacher_threshold)
+        agent.pretrain(vec, teacher, steps=ppo_cfg.bc_steps)
 
     def callback(agent: PPOAgent, step: int) -> dict:
         policy = ensemble_policy([agent], cfg.env.actions, confidence=cfg.train.confidence)
@@ -141,7 +142,7 @@ def run_walkforward(cfg: ExperimentConfig, max_folds: int | None = None) -> pd.D
         baselines = {
             "flat": flat_policy(cfg.env.actions),
             "long": long_policy(cfg.env.actions),
-            "momentum": momentum_policy(test_env),
+            "momentum": momentum_policy(test_env, cfg.train.teacher_feature, cfg.train.teacher_threshold),
         }
         base_metrics = {}
         for name, base_policy in baselines.items():

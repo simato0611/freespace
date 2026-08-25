@@ -85,3 +85,36 @@ def test_ensemble_policy_falls_back_to_flat_below_confidence():
     record = run_policy(env, policy, start=0, episode_len=200)
     assert record["position"].abs().max() == 0.0
     assert record["equity"].iloc[-1] == cfg.initial_equity  # フラットならコストも発生しない
+
+
+def test_trend_policy_follows_price_direction():
+    """トレンドフォロー方策は、上昇局面でロング、下降局面でフラット（long_only）になる。"""
+    import pandas as pd
+
+    from rlgmo.backtest import trend_policy
+    from rlgmo.env import TradingEnv
+
+    n = 400
+    idx = pd.date_range("2026-01-01", periods=n, freq="1h", tz="UTC")
+    up = np.linspace(1e7, 1.4e7, n // 2)
+    down = np.linspace(1.4e7, 1.0e7, n - n // 2)
+    prices = np.concatenate([up, down]) * (1 + 0.001 * np.sin(np.arange(n)))
+    meta = pd.DataFrame({"open": prices, "high": prices * 1.001, "low": prices * 0.999, "close": prices,
+                         "volume": np.ones(n), "vol_1m": np.full(n, 5e-3), "vol_ratio": np.ones(n)}, index=idx)
+    features = pd.DataFrame(np.zeros((n, 2), dtype=np.float32), columns=["a", "b"], index=idx)
+    env = TradingEnv(features, meta, EnvConfig(vol_target=False, randomize_costs=False), training=False)
+    policy = trend_policy(env, lookback_bars=48, long_only=True)
+    values = np.asarray(env.cfg.actions)
+
+    env.reset(start=0)
+    positions = []
+    while True:
+        action = policy(None)
+        positions.append(values[action])
+        _, _, terminated, truncated, _ = env.step(action)
+        if terminated or truncated:
+            break
+    positions = np.array(positions)
+    assert positions.min() >= 0.0                      # long_only
+    assert positions[100:190].mean() > 0.5             # 上昇局面ではロング
+    assert positions[260:380].mean() < 0.2             # 下降局面では降りる

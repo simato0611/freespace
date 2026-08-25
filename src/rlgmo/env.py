@@ -39,7 +39,16 @@ import pandas as pd
 from .costs import CostConfig, carry_flags, carry_rate_per_bar, effective_trade_rate
 
 ACCOUNT_FEATURES = 6
-BARS_PER_YEAR = 365 * 24 * 60
+MINUTES_PER_YEAR = 365 * 24 * 60
+BARS_PER_YEAR = MINUTES_PER_YEAR  # 1 分足での既定値（後方互換）
+
+
+def _infer_bar_minutes(index: pd.DatetimeIndex) -> float:
+    """index の間隔からバー長（分）を推定する。"""
+    if len(index) < 3:
+        return 1.0
+    step = float(pd.Series(index).diff().dt.total_seconds().median() / 60.0)
+    return step if np.isfinite(step) and step > 0 else 1.0
 
 
 @dataclass
@@ -107,11 +116,14 @@ class TradingEnv:
         self._vol_ratio = np.nan_to_num(meta["vol_ratio"].to_numpy(dtype=np.float64), nan=1.0)
         self._carry = carry_flags(self.index, self.cfg.cost.carry_hour_jst)
         self._n = len(self.index)
+        # バー長は index から推定する（1 分足でも 1 時間足でも同じコードで動かすため）
+        self.bar_minutes = _infer_bar_minutes(self.index)
+        self.bars_per_year = MINUTES_PER_YEAR / self.bar_minutes
 
         self.n_actions = len(self.cfg.actions)
         self.observation_dim = self._feats.shape[1] + ACCOUNT_FEATURES
         self._rng = np.random.default_rng()
-        self._target_vol_bar = self.cfg.reward.target_vol_ann / np.sqrt(BARS_PER_YEAR)
+        self._target_vol_bar = self.cfg.reward.target_vol_ann / np.sqrt(self.bars_per_year)
         # コストカリキュラム用の倍率（学習序盤だけコストを軽くする。詳細は agents/ppo.py）
         self.cost_scale = 1.0
         self.reset()
@@ -215,7 +227,9 @@ class TradingEnv:
 
         # --- 建玉管理料（JST 06:00 課金）
         carry_cost = (
-            abs(target_notional) * carry_rate_per_bar(cfg.cost, 1, bool(self._carry[t + 1])) * self.cost_scale
+            abs(target_notional)
+            * carry_rate_per_bar(cfg.cost, self.bar_minutes, bool(self._carry[t + 1]))
+            * self.cost_scale
         )
 
         prev_equity = self.equity
@@ -276,7 +290,7 @@ class TradingEnv:
         """ボラターゲットによるサイズ調整係数。"""
         if not self.cfg.vol_target:
             return 1.0
-        target_bar = self.cfg.vol_target_ann / np.sqrt(BARS_PER_YEAR)
+        target_bar = self.cfg.vol_target_ann / np.sqrt(self.bars_per_year)
         vol = max(self._vol_1m[t], 1e-6)
         return float(np.clip(target_bar / (vol * self.cfg.leverage_cap), 0.05, self.cfg.vol_scale_cap))
 
@@ -310,6 +324,7 @@ class TradingEnv:
         return float(np.clip(dsr * eta, -10, 10))
 
     def _jst_day(self, t: int) -> int:
+        """JST の「日」を表す整数（日付が変われば値が変わる）。"""
         return int((self.index[t].value // 60_000_000_000 + 9 * 60) // 1440)
 
     def _obs(self) -> np.ndarray:
@@ -324,7 +339,7 @@ class TradingEnv:
                 self._pos,
                 abs(self._notional) / max(self.equity * self.cfg.leverage_cap, 1e-9),
                 np.clip(unreal, -5, 5),
-                np.log1p(self._bars_held) / np.log(1440),
+                np.log1p(self._bars_held) / np.log(max(self.bars_per_year / 365, 2)),
                 np.clip((self._peak - self.equity) / self._peak * 10, 0, 5),
                 np.clip((self.equity / self._day_start_equity - 1) / self.cfg.daily_loss_limit, -3, 3),
             ],
