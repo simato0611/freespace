@@ -1,0 +1,30 @@
+# 検証済みの正常データ（Huobi BTC/USDT 1分足 2017-10〜2020-05）
+#   Binance との時間足相関 0.9986 で健全性を確認済み。
+#   ※ Bitstamp のバルク履歴（〜2025-01-07）は時刻が実際の値動きと対応しないため使わないこと。
+data:
+  symbol: BTCUSDT_huobi
+  interval: 1min
+  path: data/raw/BTCUSDT_huobi_1min.parquet
+  start: "2017-10-27"
+  end: "2020-05-31"
+  use_synthetic: false
+features:
+  base_minutes: 1
+  timeframes: [1, 5, 15]
+  ret_lags: [1, 2, 3, 5, 10, 20]
+  scale_window: 10080
+  clip: 5.0
+env:
+  cost:
+    half_spread_bp: 2.0
+    slippage_bp: 0.5
+    carry_rate_daily: 0.0004
+    carry_mode: daily_0600
+walkforward:
+  train_days: 180
+  valid_days: 30
+  test_days: 60
+  step_days: 60
+  embargo_hours: 24
+train:
+  out_dir: runs/btc_clean
