@@ -32,7 +32,7 @@ GMO コインのレバレッジ取引（5 銘柄）向けの、複数銘柄ト�
 ## 開発
 
 ```bash
-pip install -e .
+pip install -e .                              # RL も動かすなら '.[rl]'
 python -m pytest tests -q                    # 73 件。変更前後で必ず通すこと
 python data/handoff/verify_bundle.py --repo . # 基準データと基準の数字を確認
 ```

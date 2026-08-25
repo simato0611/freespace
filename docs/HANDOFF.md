@@ -152,7 +152,7 @@ signal   = mean(trend(5), trend(14), trend(30), trend(60)) / 1.5    → [−1, +
 
 ```bash
 git checkout claude/rl-crypto-trading-strategy-hb5qqb
-pip install -e .            # または pip install -r requirements.txt
+pip install -e .            # RL も動かすなら pip install -e '.[rl]'
 python -m pytest tests -q   # 73 件全通過するはず
 
 # 基準データの完全性と、基準の数字が再現できるかを確認する

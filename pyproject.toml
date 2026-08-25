@@ -1,0 +1,31 @@
+# パッケージ定義。`pip install -e .` で src/rlgmo をインポート可能にする。
+#
+# これが無かった頃は、各スクリプトが冒頭で sys.path に src を挿していた
+# （その記述は互換のため残してある）。引き継ぎ時に「手順どおり叩いたら動かない」
+# という事故が起きたため、正式に定義した。
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rlgmo"
+version = "0.1.0"
+description = "GMO コイン レバレッジ取引向けの複数銘柄トレンドフォロー戦略"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "pyyaml>=6.0",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+# PPO エージェント。RL は単純ルールに負けたので実運用には不要（docs/strategy_search.md 3節・30節）
+rl = ["torch>=2.1"]
+dev = ["pytest>=7.4"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

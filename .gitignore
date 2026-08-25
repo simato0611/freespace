@@ -15,3 +15,4 @@ runs/
 .ipynb_checkpoints/
 .pytest_cache/
 data/cache/
+*.egg-info/
