@@ -1,0 +1,65 @@
+# ============================================================================
+# GMO コイン レバレッジ取引での実装用設定（戦略 v2）
+#
+#   対象銘柄: BTC_JPY / ETH_JPY / XRP_JPY / LTC_JPY / BCH_JPY（GMO のレバレッジ全 5 銘柄）
+#
+#   ⚠️ 検証状況: 入手できた検証データは BTC / ETH / XRP の 3 銘柄のみ。
+#      LTC / BCH は直接検証できていない。5 銘柄構成の期待値は、7 銘柄データから
+#      「BTC+ETH+XRP+他 2 銘柄」の全 6 通りを総当たりして推定した:
+#          ホールドアウト Sharpe 中央値 +0.92（範囲 +0.74〜+1.11）
+#          全期間        Sharpe 中央値 +1.55
+#      3 銘柄のみだと ホールドアウト +0.78 / 全期間 +1.38。
+#      運用開始前に scripts/fetch_data.py で GMO 実データを取得し、
+#      scripts/verify_data.py で健全性を確認したうえで再検証すること。
+# ============================================================================
+
+data:
+  # GMO Public API から取得したデータの置き場（scripts/fetch_data.py --symbol BTC_JPY ...）
+  path: data/raw/gmo
+  symbols: [BTC_JPY, ETH_JPY, XRP_JPY, LTC_JPY, BCH_JPY]
+  interval: 1min
+
+strategy:
+  # --- シグナル: トレンド・ラダー（両建て）
+  lookback_days: [5, 14, 30, 60]   # 4 本の平均。単一ルックバックへの当てはめを避ける
+  long_only: false                 # 両建て。ショートは分散したときに下落局面の収益源になる
+  gain: 1.5                        # シグナル → 目標ポジションの除数
+  vol_window_bars: 30              # シグナル正規化に使うボラの窓（1 時間足 30 本）
+
+  # --- 判断と執行
+  grid_hours: 1                    # 1 時間ごとに判断
+  rebalance_band: 0.10             # 目標が 0.10 以上動いたときだけ建て直す
+  carry_avoidance: false           # 06:00 JST の課金回避。往復 4bp 未満で執行できる場合のみ true
+
+  # --- サイジング
+  asset_vol_ann: 0.15              # 銘柄ごとの目標ボラ（等リスク配分の単位）
+  target_vol_ann: 0.15             # ポートフォリオ全体の目標ボラ。DD はここに比例する
+  max_weight: 0.5                  # 1 銘柄あたりの建玉上限（有効証拠金比）
+  leverage_cap: 2.0                # 総建玉の上限。GMO の個人向け上限
+
+cost:
+  half_spread_bp: 1.5              # 指値優先の想定。成行のみなら 2.5 に上げる
+  slippage_bp: 0.0                 # 上の値に含める
+  taker_fee_bp: 0.0                # GMO レバレッジは取引手数料無料
+  carry_rate_daily: 0.0004         # 建玉管理料 0.04%/日（JST 06:00 時点の建玉に課金）
+  carry_mode: daily_0600
+  # 損益分岐は片道 22bp 前後。想定の 13 倍まで耐えるので、コストは律速要因ではない
+
+risk:
+  # rlgmo.risk.RiskLimits に対応。学習ではなく決定論的に守る層
+  max_position: 1.0
+  daily_loss_limit: 0.05           # 数日保有の戦略なので日次上限は緩め
+  max_drawdown_stop: 0.20          # 累積 DD -20% で完全停止（人手で再開）
+  drawdown_taper: 0.12             # -12% を超えたらサイズを線形に縮小
+  max_vol_ann: 2.0
+  max_half_spread_bp: 8.0          # 板が壊れているときは執行しない
+  max_data_staleness_sec: 300      # 1 時間判断なので鮮度の許容は緩め
+  min_margin_ratio: 1.5
+  min_trade_delta: 0.05
+
+monitoring:
+  # 想定から外れたら止めるための基準（docs/strategy_design.md 9.3 節）
+  expected_turnover_per_day: 0.20  # 実測がこの 2 倍を超えたら異常
+  expected_ann_vol: 0.15           # 実測が 0.25 を超えたらサイズを見直す
+  expected_gross_exposure: 0.24
+  review_interval_days: 30
