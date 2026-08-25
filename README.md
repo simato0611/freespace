@@ -5,7 +5,21 @@ GMO コインのレバレッジ取引（`BTC_JPY` 等）を対象に、**1 分�
 
 📄 **設計の本体は [`docs/strategy_design.md`](docs/strategy_design.md)**（MDP 定式化・コスト算術・検証プロトコル・採用ゲート・失敗モード）。
 
-🔎 **戦略探索と最終判定は [`docs/strategy_search.md`](docs/strategy_search.md)。**
+🔎 **戦略探索と判定は [`docs/strategy_search.md`](docs/strategy_search.md)。**
+
+**最有力候補: 7 銘柄・等リスクのトレンドフォロー**（14日モメンタム・ロングオンリー・4時間判断）
+
+| 期間 | ポートフォリオ | BTC 単独 | 買い持ち |
+|---|---:|---:|---:|
+| 開発 2020-01〜2024-12（5年） | Sharpe **1.59** / 年率 49.0% / DD −27.5% | 1.28 / 36.2% | 1.09 / 32.6% |
+| **ホールドアウト 2025-01〜2026-03**（封印・一度だけ） | **+0.61 / +20.5%** / DD −20.0% | +0.02 / +0.6% | **−0.70 / −19.2%** |
+
+分散が効いて、BTC 単独ならほぼゼロだった同じルールが買い持ち −19.2% の下落局面で +20.5%。
+ただし **Deflated Sharpe 0.07・最大DD −20%** で採用ゲートは未達（**保留**）。次は少額フォワード検証。
+新情報源（ファンディング/ベーシス/OI）は 20 本試して**すべて上乗せ無し**。
+
+---
+
 優位性が存在する時間軸を探した結果、**多日スケールのロングオンリー・トレンドフォロー**を発見:
 開発期間（BTC 8.5 年）Sharpe **+1.44**、他 6 銘柄でもパラメータ無変更で **6/6 プラス**。
 ただし**封印していたホールドアウト 14 ヶ月では Sharpe −0.75** で採用ゲートを満たさない
@@ -153,6 +167,7 @@ src/rlgmo/
   walkforward.py            purge & embargo 付きウォークフォワード分割
   backtest.py               方策の実行とベースライン（flat / long / momentum）
   metrics.py                Sharpe・DD・回転率・Deflated Sharpe
+  portfolio.py              複数銘柄の等リスク配分 + ポートフォリオ・ボラターゲット
   pipeline.py               データ→学習→検証→テストの一連の流れ
 
 scripts/
@@ -166,6 +181,9 @@ scripts/
   reevaluate_folds.py       再学習せずに評価だけ取り直す
   backtest.py / stress_test.py / cost_sweep.py / aggregate_runs.py
   final_holdout.py          封印期間で一度だけ評価する
+  import_perp.py            7銘柄のファンディング/OI/ベーシス付きデータの取り込み
+  perp_survey.py            新情報源（ファンディング/ベーシス/OI）の探索
+  portfolio_backtest.py     複数銘柄・等リスク運用のバックテスト
   measure_spread.py / live_paper.py
 tests/                      28 テスト（環境の会計、特徴量の因果性、リスク、指標、分割）
 ```
