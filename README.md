@@ -1,5 +1,9 @@
 # rlgmo — 強化学習による仮想通貨取引戦略（GMO コイン レバレッジ / 1〜15 分足）
 
+> 🧭 **引き継ぎ中** — 本戦略は Desktop 版 Claude Code に引き継ぎます（GMO API に到達できるため）。
+> **[`docs/HANDOFF.md`](docs/HANDOFF.md) を最初に読んでください。** 次にやるべきことと、
+> やってはいけないことが書いてあります。人間向けの要約は [`docs/handoff_brief.html`](docs/handoff_brief.html)。
+
 GMO コインのレバレッジ取引（`BTC_JPY` 等）を対象に、**1 分足ごとに目標ポジション比率を決める**
 強化学習エージェント（PPO）の設計・学習・検証・運用の一式。
 

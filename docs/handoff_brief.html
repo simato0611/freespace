@@ -1,0 +1,422 @@
+<title>GMO実装への引き継ぎ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+  :root{
+    --ink:#141b26; --ink-2:#3d4759; --ink-3:#6b7688;
+    --ground:#f4f6f9; --surface:#ffffff; --surface-2:#eaeef4;
+    --rule:#d3dae4; --rule-strong:#9aa6b8;
+    --accent:#3f5390; --accent-soft:#e6eaf5;
+    --ok:#1f6b4a; --ok-soft:#dcefe4;
+    --warn:#8f6410; --warn-soft:#f6ecd6;
+    --stop:#9c3826; --stop-soft:#f7e2dd;
+    --shadow:0 1px 2px rgba(20,27,38,.06),0 8px 24px rgba(20,27,38,.05);
+    --sans:"Noto Sans JP",system-ui,-apple-system,"Hiragino Kaku Gothic ProN",sans-serif;
+    --display:"Zen Kaku Gothic New","Noto Sans JP",system-ui,sans-serif;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ink:#e8edf5; --ink-2:#aeb9cb; --ink-3:#7d8798;
+      --ground:#0e131b; --surface:#151c27; --surface-2:#1d2634;
+      --rule:#2a3444; --rule-strong:#485468;
+      --accent:#8fa3e0; --accent-soft:#1e2740;
+      --ok:#63c295; --ok-soft:#14291f;
+      --warn:#d8ad55; --warn-soft:#2b2415;
+      --stop:#e08d78; --stop-soft:#2e1a15;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#e8edf5; --ink-2:#aeb9cb; --ink-3:#7d8798;
+    --ground:#0e131b; --surface:#151c27; --surface-2:#1d2634;
+    --rule:#2a3444; --rule-strong:#485468;
+    --accent:#8fa3e0; --accent-soft:#1e2740;
+    --ok:#63c295; --ok-soft:#14291f;
+    --warn:#d8ad55; --warn-soft:#2b2415;
+    --stop:#e08d78; --stop-soft:#2e1a15;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--ground); color:var(--ink);
+    font-family:var(--sans); font-size:15.5px; line-height:1.85;
+    margin:0; padding:0 20px 96px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:960px; margin:0 auto}
+  .prose{max-width:66ch}
+  h1,h2,h3{font-family:var(--display); text-wrap:balance; margin:0}
+  p{margin:0}
+  a{color:var(--accent)}
+  code,.mono{font-family:var(--mono); font-variant-ligatures:none}
+  .num{font-variant-numeric:tabular-nums}
+
+  /* ---------- ヘッダ ---------- */
+  header{padding:64px 0 40px; border-bottom:2px solid var(--ink); margin-bottom:0}
+  .eyebrow{
+    font-family:var(--mono); font-size:11.5px; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--ink-3); margin-bottom:18px;
+  }
+  h1{font-size:clamp(34px,6vw,54px); font-weight:900; line-height:1.15; letter-spacing:-.02em}
+  .lede{margin-top:20px; font-size:17px; color:var(--ink-2); max-width:60ch}
+  .meta{
+    display:flex; flex-wrap:wrap; gap:8px 24px; margin-top:28px;
+    font-family:var(--mono); font-size:12px; color:var(--ink-3);
+  }
+  .meta b{color:var(--ink-2); font-weight:400}
+
+  /* ---------- セクション ---------- */
+  section{padding:56px 0; border-bottom:1px solid var(--rule)}
+  section:last-of-type{border-bottom:none}
+  .shead{display:flex; align-items:baseline; gap:14px; margin-bottom:8px}
+  .shead .tag{
+    font-family:var(--mono); font-size:11px; letter-spacing:.14em;
+    color:var(--accent); padding-top:2px; white-space:nowrap;
+  }
+  h2{font-size:clamp(22px,3.4vw,29px); font-weight:700; letter-spacing:-.01em}
+  .sub{color:var(--ink-2); margin-top:14px; font-size:15px}
+  h3{font-size:16.5px; font-weight:700; margin-top:34px; margin-bottom:10px}
+
+  /* ---------- 数値タイル ---------- */
+  .tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px;
+         background:var(--rule); border:1px solid var(--rule); margin-top:30px; border-radius:3px; overflow:hidden}
+  .tile{background:var(--surface); padding:20px 18px}
+  .tile .k{font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; color:var(--ink-3); text-transform:uppercase}
+  .tile .v{font-family:var(--display); font-size:30px; font-weight:700; line-height:1.2; margin-top:8px; letter-spacing:-.02em}
+  .tile .n{font-size:12px; color:var(--ink-3); margin-top:4px}
+  .tile.alarm{background:var(--stop-soft)}
+  .tile.alarm .v{color:var(--stop)}
+
+  /* ---------- 境界線（本文書の主題） ---------- */
+  .split{display:grid; grid-template-columns:1fr 1fr; gap:0; margin-top:34px;
+         border:1px solid var(--rule); border-radius:3px; overflow:hidden; background:var(--surface)}
+  .split>div{padding:24px 22px}
+  .split>div+div{border-left:3px solid var(--rule-strong)}
+  .col-head{display:flex; align-items:center; gap:9px; margin-bottom:18px;
+            font-family:var(--display); font-weight:700; font-size:15px}
+  .dot{width:9px; height:9px; border-radius:50%; flex:none}
+  .dot.ok{background:var(--ok)} .dot.no{background:var(--stop)}
+  .split ul{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:11px}
+  .split li{font-size:14px; line-height:1.6; padding-left:16px; position:relative; color:var(--ink-2)}
+  .split li::before{content:""; position:absolute; left:0; top:.62em; width:6px; height:1px; background:var(--rule-strong)}
+  .split li b{color:var(--ink); font-weight:500}
+
+  /* ---------- 手順 ---------- */
+  .steps{display:flex; flex-direction:column; gap:0; margin-top:30px;
+         border:1px solid var(--rule); border-radius:3px; overflow:hidden}
+  .step{display:grid; grid-template-columns:56px 1fr; background:var(--surface)}
+  .step+.step{border-top:1px solid var(--rule)}
+  .step .idx{
+    background:var(--surface-2); border-right:1px solid var(--rule);
+    font-family:var(--mono); font-size:14px; font-weight:700; color:var(--ink-3);
+    display:flex; align-items:flex-start; justify-content:center; padding-top:23px;
+  }
+  .step.key .idx{background:var(--accent-soft); color:var(--accent)}
+  .step .bd{padding:20px 22px}
+  .step h3{margin:0 0 6px; font-size:16px}
+  .step .why{font-size:14px; color:var(--ink-2); margin-bottom:0}
+  pre{
+    margin:14px 0 0; padding:13px 15px; overflow-x:auto;
+    background:var(--surface-2); border-left:2px solid var(--rule-strong); border-radius:2px;
+    font-family:var(--mono); font-size:12.5px; line-height:1.75; color:var(--ink-2);
+  }
+  .judge{
+    margin-top:14px; font-size:13.5px; padding:10px 14px; border-radius:2px;
+    background:var(--ok-soft); color:var(--ok); border:1px solid transparent;
+  }
+  .judge b{font-weight:700}
+
+  /* ---------- 表 ---------- */
+  .tbox{overflow-x:auto; margin-top:24px; border:1px solid var(--rule); border-radius:3px; background:var(--surface)}
+  table{border-collapse:collapse; width:100%; font-size:13.5px; min-width:480px}
+  th,td{padding:11px 16px; text-align:left; border-bottom:1px solid var(--rule)}
+  thead th{
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--ink-3); font-weight:400; background:var(--surface-2); white-space:nowrap;
+  }
+  tbody tr:last-child td{border-bottom:none}
+  td.n,th.n{text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums}
+  tbody tr.hl td{background:var(--accent-soft); font-weight:500}
+  .pill{
+    display:inline-block; font-family:var(--mono); font-size:10.5px; letter-spacing:.06em;
+    padding:2px 8px; border-radius:2px; font-weight:700;
+  }
+  .pill.ok{background:var(--ok-soft); color:var(--ok)}
+  .pill.warn{background:var(--warn-soft); color:var(--warn)}
+  .pill.stop{background:var(--stop-soft); color:var(--stop)}
+
+  /* ---------- 禁止事項 ---------- */
+  .rules{display:flex; flex-direction:column; gap:0; margin-top:28px;
+         border:1px solid var(--stop); border-radius:3px; overflow:hidden}
+  .rule{background:var(--surface); padding:17px 22px; display:grid; grid-template-columns:26px 1fr; gap:12px}
+  .rule+.rule{border-top:1px solid var(--rule)}
+  .rule .x{color:var(--stop); font-family:var(--mono); font-weight:700; font-size:14px; line-height:1.7}
+  .rule b{display:block; font-weight:700; font-size:14.5px; margin-bottom:3px}
+  .rule span{font-size:13.5px; color:var(--ink-2); line-height:1.7}
+
+  .files{margin-top:26px; font-family:var(--mono); font-size:13px; display:flex; flex-direction:column; gap:0;
+         border:1px solid var(--rule); border-radius:3px; overflow:hidden; background:var(--surface)}
+  .file{display:grid; grid-template-columns:minmax(180px,260px) 1fr; gap:16px; padding:11px 18px; align-items:baseline}
+  .file+.file{border-top:1px solid var(--rule)}
+  .file span{font-family:var(--sans); font-size:13px; color:var(--ink-2)}
+  .file em{color:var(--accent); font-style:normal}
+
+  .close{margin-top:46px; padding:26px 28px; background:var(--surface); border:1px solid var(--rule);
+         border-left:3px solid var(--accent); border-radius:3px; font-size:15px; color:var(--ink-2)}
+  .close b{color:var(--ink)}
+
+  @media (max-width:720px){
+    .split{grid-template-columns:1fr}
+    .split>div+div{border-left:none; border-top:3px solid var(--rule-strong)}
+    .file{grid-template-columns:1fr; gap:2px}
+    .step{grid-template-columns:44px 1fr}
+  }
+  :focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Handoff · 2026-08-25 · claude/rl-crypto-trading-strategy-hb5qqb</div>
+  <h1>GMO実装への引き継ぎ</h1>
+  <p class="lede">暗号資産トレンド戦略 v2 の設計・検証・実行系は完成している。残っているのは
+  <b>GMO の実データで同じ結論が出るかを確かめること</b>。リモート環境から GMO API に到達できず、
+  そこだけが空白のまま残った。</p>
+  <div class="meta">
+    <div>検証期間 <b>5.7年</b></div>
+    <div>試行 <b>139本</b></div>
+    <div>テスト <b>73件 全通過</b></div>
+    <div>実弾 <b>0円</b></div>
+  </div>
+</header>
+
+<section>
+  <div class="shead"><div class="tag">01</div><h2>現在地</h2></div>
+  <p class="sub prose">封印したホールドアウト15か月を、一度だけ使った結果。BTCベータがほぼゼロで、
+  上げ月も下げ月も平均プラス — 「相場が上がったから儲かった」戦略ではない。</p>
+  <div class="tiles">
+    <div class="tile"><div class="k">Holdout Sharpe</div><div class="v num">1.01</div><div class="n">全期間 1.53</div></div>
+    <div class="tile"><div class="k">年率リターン</div><div class="v num">18.0%</div><div class="n">ボラ 16.4%</div></div>
+    <div class="tile"><div class="k">最大ドローダウン</div><div class="v num">−8.7%</div><div class="n">全期間 −14.3%</div></div>
+    <div class="tile"><div class="k">BTCベータ</div><div class="v num">−0.01</div><div class="n">相関 −0.05</div></div>
+    <div class="tile alarm"><div class="k">ライブ実績</div><div class="v">ゼロ</div><div class="n">全てシミュレーション</div></div>
+  </div>
+</section>
+
+<section>
+  <div class="shead"><div class="tag">02</div><h2>確認済みと未確認の境界線</h2></div>
+  <p class="sub prose">この引き継ぎで最も重要な一枚。ここを曖昧にしたまま進めると、
+  検証済みのように見えて実は何も確かめていない領域に入る。</p>
+  <div class="split">
+    <div>
+      <div class="col-head"><span class="dot ok"></span>確認済み</div>
+      <ul>
+        <li><b>ホールドアウト15か月</b> Sharpe 1.01 / 年率18% / DD −8.7%</li>
+        <li><b>並べ替え検定</b> ホールドアウト内で p=0.010（タイミングを壊すと −0.88 に落ちる）</li>
+        <li><b>四半期符号検定</b> 18勝5敗、p=0.0053</li>
+        <li><b>コスト耐性</b> 損益分岐 片道22bp — 想定1.5bpの13倍</li>
+        <li><b>執行遅延耐性</b> 8時間遅れても符号は反転しない</li>
+        <li><b>銘柄数の頑健性</b> 7銘柄から選ぶ3銘柄の全35通りがプラス</li>
+        <li><b>取引所差</b> Bitstamp と Binance で差 0.03</li>
+        <li><b>JPY建て</b> 為替を織り込んでもホールドアウトは +0.10</li>
+        <li><b>発注回数</b> 5銘柄合計 11〜12回/日、方向転換は月4回</li>
+        <li><b>RLの上乗せ</b> なし（+0.14 vs ルール +0.67）— 正常データで再検証済み</li>
+      </ul>
+    </div>
+    <div>
+      <div class="col-head"><span class="dot no"></span>未確認 — Desktop でやること</div>
+      <ul>
+        <li><b>GMOの実価格データ</b> 一度も取得していない。全検証は Binance / Bitstamp</li>
+        <li><b>LTC_JPY / BCH_JPY</b> 完全に未検証。5銘柄中2銘柄が外挿でしか語れていない</li>
+        <li><b>実効スプレッド</b> 想定1.5bp は仮定。自分の発注サイズで実測が必要</li>
+        <li><b>数量の丸め・最小発注単位</b> 全銘柄 <code>.4f</code> 固定のまま。XRP は桁が全く合わない</li>
+        <li><b>発注数量上限・キャパシティ</b> 未測定。GMO は取引の相手方である</li>
+        <li><b>APIの実挙動</b> 認証・レート制限・約定拒否・建玉照合、すべて机上</li>
+        <li><b>ドライラン</b> 未実施</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>時間でしか解決しないもの</h3>
+  <p class="sub prose">ホールドアウト15か月の独立した方向転換は <b>44回</b>しかない。Deflated Sharpe は
+  0.11（試行139本の補正後）で採用ゲート不合格。「真の Sharpe が 1.0 か 0.3 か」は今のデータでは判別できない。
+  戦略の欠陥ではなく、データ量の問題である。<b>実運用の期待は 0.5〜0.8</b> と見ておくのが正しい。</p>
+</section>
+
+<section>
+  <div class="shead"><div class="tag">03</div><h2>引き継ぎ手順</h2></div>
+  <p class="sub prose">順序に意味がある。各ステップに判定基準を置いた。基準を満たさないまま次へ行くと、
+  どこで壊れたか永久に分からなくなる。</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="idx">1</div>
+      <div class="bd">
+        <h3>環境確認</h3>
+        <p class="why">通らなければ環境の問題。先へ進まない。</p>
+        <pre>git checkout claude/rl-crypto-trading-strategy-hb5qqb
+pip install -e .
+python -m pytest tests -q      <span style="opacity:.6"># 73件 全通過するはず</span></pre>
+      </div>
+    </div>
+
+    <div class="step key">
+      <div class="idx">2</div>
+      <div class="bd">
+        <h3>GMO 実データの取得 <span class="pill ok">最重要</span></h3>
+        <p class="why">K線の提供は 2021-04-16 以降、約4.4年ぶん。1日1リクエストなので5銘柄で約70分かかる。</p>
+        <pre>for S in BTC_JPY ETH_JPY XRP_JPY LTC_JPY BCH_JPY; do
+  python scripts/fetch_data.py --symbol $S --interval 1min \
+    --start 2021-04-16 --end 2026-08-25 --out data/raw/gmo/${S}_1min.parquet
+done</pre>
+        <div class="judge"><b>判定</b> — 5銘柄すべてで 2021-04-16 以降が概ね埋まっていること。大きな空白はメモしておく。</div>
+      </div>
+    </div>
+
+    <div class="step key">
+      <div class="idx">3</div>
+      <div class="bd">
+        <h3>データの健全性検証 <span class="pill stop">飛ばさない</span></h3>
+        <p class="why">過去に公開データの破損で検証結果が丸ごと無意味になった事故がある。価格水準もボラも正常なのに、
+        バーの時刻が実際の値動きと対応していなかった。欠損・重複チェックでは検出できない。</p>
+        <pre>python scripts/verify_data.py \
+  --a data/raw/gmo/BTC_JPY_1min.parquet \
+  --b data/raw/perp/BTC_1h.parquet --freq 1h --by-year</pre>
+        <div class="judge"><b>判定</b> — 時間足リターン相関 ≥ 0.95 で正常。JPY建てとUSD建ての差があるので 0.99 までは行かない。
+        <code>--by-year</code> で年ごとに見ること。特定の年だけ落ちるパターンが最も危険。</div>
+      </div>
+    </div>
+
+    <div class="step key">
+      <div class="idx">4</div>
+      <div class="bd">
+        <h3>本番設定での再検証</h3>
+        <p class="why">この引き継ぎのために用意したスクリプト。バックテスト用のパラメータを別に持たず、
+        <b>本番設定ファイルを直接読む</b>ので「検証したものと動かすものが違う」事故が起きない。GO/NO-GO まで自動で出す。</p>
+        <pre>python scripts/gmo_validate.py --dir data/raw/gmo \
+  --config configs/gmo_live.yaml --btc BTC_JPY</pre>
+        <div class="judge"><b>判定</b> — 下のゲート表を参照。<b>数字が低く出てもパラメータを触ってはいけない。</b>
+        まずデータを疑う（ステップ3に戻る）。</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="idx">5</div>
+      <div class="bd">
+        <h3>実効スプレッドの実測と発注仕様の反映</h3>
+        <p class="why">発注仕様は推測で書かない。<code>/v1/symbols</code> のレスポンスに
+        <code>minOrderSize</code> / <code>maxOrderSize</code> / <code>sizeStep</code> が銘柄ごとに入っている。
+        それを使って <code>scripts/live_gmo.py:148,152</code> の <code>.4f</code> 固定を置き換える。テストを先に書くこと。</p>
+        <pre>python scripts/measure_spread.py --symbol BTC_JPY --minutes 60 --size 0.01
+curl -s https://api.coin.z.com/public/v1/symbols | python -m json.tool</pre>
+        <div class="judge"><b>判定</b> — 実測スプレッドが片道8bp以内なら想定の範囲（損益分岐は22bp）。</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="idx">6</div>
+      <div class="bd">
+        <h3>ドライラン（最低1か月）</h3>
+        <p class="why">既定がドライラン。<code>GMO_API_KEY</code> / <code>GMO_API_SECRET</code> は環境変数から読む（コードに書かない）。</p>
+        <pre>python scripts/live_gmo.py --config configs/gmo_live.yaml</pre>
+        <div class="judge"><b>判定</b> — 発注12回/日・グロス建玉0.24倍・年率ボラ0.15 が実際に出ること。
+        乖離があれば原因を特定してから次へ。「たぶん誤差」で進めない。</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="idx">7</div>
+      <div class="bd">
+        <h3>実弾（失っても構わない金額で3〜6か月）</h3>
+        <p class="why">前ステップが全て通ってから。<code>--live</code> を付けたときだけ実発注する。
+        想定運用額の1/10から始め、バックテストとの乖離を測る。</p>
+      </div>
+    </div>
+  </div>
+
+  <h3>採用ゲート — <code>gmo_validate.py</code> が自動判定する</h3>
+  <div class="tbox">
+    <table>
+      <thead><tr><th>指標</th><th class="n">GO</th><th class="n">要検討</th><th class="n">NO-GO</th><th class="n">海外データでの実測</th></tr></thead>
+      <tbody>
+        <tr><td>ホールドアウト Sharpe</td><td class="n">≥ 0.6</td><td class="n">0.2〜0.6</td><td class="n">&lt; 0.2</td><td class="n">1.06 <span class="pill ok">GO</span></td></tr>
+        <tr><td>最大ドローダウン</td><td class="n">≤ 15%</td><td class="n">15〜25%</td><td class="n">&gt; 25%</td><td class="n">8.5% <span class="pill ok">GO</span></td></tr>
+        <tr><td>発注回数 / 日</td><td class="n">≤ 20</td><td class="n">20〜40</td><td class="n">&gt; 40</td><td class="n">12.1 <span class="pill ok">GO</span></td></tr>
+        <tr><td>月次勝率</td><td class="n">≥ 55%</td><td class="n">45〜55%</td><td class="n">&lt; 45%</td><td class="n">60.0% <span class="pill ok">GO</span></td></tr>
+        <tr><td>BTCベータ（絶対値）</td><td class="n">≤ 0.3</td><td class="n">0.3〜0.5</td><td class="n">&gt; 0.5</td><td class="n">0.15 <span class="pill ok">GO</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="sub prose" style="margin-top:16px">右端は既存の海外データ（BTC/ETH/XRP/BNB/DOGE）で同じコマンドを走らせた結果。
+  <b>GMO 実データがこれと大きく食い違ったら、戦略ではなくデータを疑うのが先。</b></p>
+</section>
+
+<section>
+  <div class="shead"><div class="tag">04</div><h2>守ってほしいルール</h2></div>
+  <p class="sub prose">このプロジェクトは検証の作法を守ったことだけが価値である。ここを崩すと
+  5.7年ぶんの検証が全部無意味になる。</p>
+  <div class="rules">
+    <div class="rule"><div class="x">01</div><div>
+      <b>ホールドアウト（2025-01-01以降）でパラメータを調整しない</b>
+      <span>既に1回使った。数字が悪くても、それは「悪いという情報」であって「調整すべきという合図」ではない。
+      再調整した瞬間、その期間はもう検証区間ではなくなる。</span></div></div>
+    <div class="rule"><div class="x">02</div><div>
+      <b>成績が悪かったからといってパラメータを触らない</b>
+      <span>ルックバック・gain・ボラ目標・バンド幅は全て開発期間だけで決めた。後から動かすのは後知恵の当てはめ。
+      変えたくなったら、変えた理由と変える前の数字を <code>docs/strategy_search.md</code> に必ず記録してから変える。</span></div></div>
+    <div class="rule"><div class="x">03</div><div>
+      <b>新しい試行は必ず記録する</b>
+      <span>現在139試行。Deflated Sharpe はこの数で補正している。黙って試すと補正が効かなくなり、統計的な主張が嘘になる。</span></div></div>
+    <div class="rule"><div class="x">04</div><div>
+      <b>「たぶん大丈夫」で先へ進まない</b>
+      <span>各ステップに判定基準を書いた。基準を満たさないまま次へ行くと、どこで壊れたか永久に分からなくなる。</span></div></div>
+    <div class="rule"><div class="x">05</div><div>
+      <b>RLを再挑戦するなら、まず記録を読む</b>
+      <span>2回（うち1回は正常データで）試して2回とも単純ルールに負けている。3回目をやる前に、何が違うのかを言語化すること。</span></div></div>
+    <div class="rule"><div class="x">06</div><div>
+      <b>バックテストとライブでサイジングを二重実装しない</b>
+      <span>両者は <code>portfolio.compute_exposures()</code> を共有し、テストで固定している。
+      ライブ側だけ書き換えるとサイレントにズレる。</span></div></div>
+  </div>
+</section>
+
+<section>
+  <div class="shead"><div class="tag">05</div><h2>過去に踏んだ罠</h2></div>
+  <p class="sub prose">同じ穴に落ちないために。全34節の詳細は <code>docs/strategy_search.md</code> にある。</p>
+  <div class="tbox">
+    <table>
+      <thead><tr><th>罠</th><th>症状</th><th>対処</th></tr></thead>
+      <tbody>
+        <tr class="hl"><td>公開データの破損</td><td>価格もボラも正常なのに、バーの時刻が値動きと対応していない</td><td><code>verify_data.py</code> を作った。新データは必ず通す</td></tr>
+        <tr><td>コスト仮定が甘い</td><td>1〜15分足で「勝てる」ように見える</td><td>損益分岐 Sharpe を先に計算する（5分足なら106が必要）</td></tr>
+        <tr><td>RLのエントロピー崩壊</td><td>常にフラットを出力して学習が止まる</td><td>探索フロア + 適応エントロピー + コストカリキュラム + BC</td></tr>
+        <tr><td>日次損失上限の副作用</td><td>バックテスト期間が 810→511日に縮む</td><td>その日だけフラット、翌JST日に再開</td></tr>
+        <tr><td>リスク判定の誤解釈</td><td>「板が壊れている」で全決済 → 最悪の場面で成行</td><td>発注見送りと全決済を分類。テストで固定</td></tr>
+        <tr><td>最小発注幅が粗すぎる</td><td>建玉0.03〜0.07 に対し閾値0.05。調整がほぼ無視される</td><td>0.005 に較正。発注120→11回/日、成績は不変</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="shead"><div class="tag">06</div><h2>最初に読むファイル</h2></div>
+  <div class="files">
+    <div class="file"><em>docs/HANDOFF.md</em><span>この文書の完全版。手順・判定基準・禁止事項の全て</span></div>
+    <div class="file"><em>configs/gmo_live.yaml</em><span>本番設定。パラメータの唯一の正</span></div>
+    <div class="file"><em>src/rlgmo/portfolio.py</em><span>戦略の核。<code>compute_exposures()</code> をライブと共有</span></div>
+    <div class="file"><em>src/rlgmo/live.py</em><span>ライブ執行ロジック。決済/新規の分割もここ</span></div>
+    <div class="file"><em>scripts/gmo_validate.py</em><span>本番設定を流して GO/NO-GO を出す</span></div>
+    <div class="file"><em>scripts/verify_data.py</em><span>データ健全性の検証</span></div>
+    <div class="file"><em>docs/strategy_search.md</em><span>全34節・139試行の記録。迷ったらここ</span></div>
+  </div>
+
+  <div class="close">
+    <b>Desktop 側の最大の貢献は、ステップ2〜4 で「GMO の実データでも同じ結論が出るか」を確かめること。</b>
+    ここで結論がひっくり返る可能性は本当に残っている。ひっくり返ったらそれが正しい答えなので、素直にそう記録してほしい。
+  </div>
+</section>
+
+</div>
