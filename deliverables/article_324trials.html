@@ -1,0 +1,481 @@
+<title>324回の失敗</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+  :root{
+    --ink:#1c1a17; --ink-2:#4a4640; --ink-3:#7b756c;
+    --paper:#faf8f4; --card:#ffffff; --card-2:#f2efe8;
+    --rule:#ddd7cb; --rule-2:#b8b0a0;
+    --accent:#3b4a7a;
+    --fail:#a33a2c; --fail-bg:#f7e6e2;
+    --live:#2b6b4f; --live-bg:#dff0e6;
+    --serif:"Shippori Mincho",serif;
+    --sans:"Zen Kaku Gothic New",system-ui,-apple-system,"Hiragino Kaku Gothic ProN",sans-serif;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ink:#ece7dd; --ink-2:#b3ab9d; --ink-3:#847c6f;
+      --paper:#16150f; --card:#1e1c16; --card-2:#282520;
+      --rule:#39352c; --rule-2:#575043;
+      --accent:#93a4d8;
+      --fail:#e08a78; --fail-bg:#2e1a16;
+      --live:#6fc396; --live-bg:#152a20;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#ece7dd; --ink-2:#b3ab9d; --ink-3:#847c6f;
+    --paper:#16150f; --card:#1e1c16; --card-2:#282520;
+    --rule:#39352c; --rule-2:#575043;
+    --accent:#93a4d8;
+    --fail:#e08a78; --fail-bg:#2e1a16;
+    --live:#6fc396; --live-bg:#152a20;
+  }
+
+  *{box-sizing:border-box}
+  body{background:var(--paper); color:var(--ink); font-family:var(--sans);
+       font-size:16px; line-height:2.0; margin:0; padding:0 22px 120px;
+       -webkit-font-smoothing:antialiased; font-feature-settings:"palt" 1}
+  .wrap{max-width:1000px; margin:0 auto}
+  .col{max-width:40em}
+  h1,h2,h3{font-family:var(--serif); font-weight:700; text-wrap:balance; margin:0; line-height:1.4}
+  p{margin:0}
+  strong{font-weight:700}
+  code,.mono{font-family:var(--mono); font-size:.88em}
+  .num{font-variant-numeric:tabular-nums}
+
+  /* ---- hero ---- */
+  header{padding:80px 0 52px}
+  .kicker{font-family:var(--mono); font-size:11px; letter-spacing:.2em; color:var(--ink-3);
+          text-transform:uppercase; margin-bottom:26px}
+  h1{font-size:clamp(40px,8vw,76px); letter-spacing:.02em; line-height:1.18}
+  .sub{font-family:var(--serif); font-size:clamp(17px,2.4vw,21px); color:var(--ink-2);
+       margin-top:22px; max-width:30em; line-height:1.9}
+
+  /* ---- 324 tally ---- */
+  .tally{margin:44px 0 0; padding:26px 26px 22px; background:var(--card);
+         border:1px solid var(--rule); border-radius:2px}
+  #dots{display:grid; grid-template-columns:repeat(36,1fr); gap:5px}
+  #dots i{display:block; aspect-ratio:1; border-radius:50%; background:var(--rule-2); opacity:.55}
+  #dots i.live{background:var(--live); opacity:1; box-shadow:0 0 0 3px var(--live-bg)}
+  .tally-key{display:flex; flex-wrap:wrap; gap:10px 28px; margin-top:20px;
+             font-family:var(--mono); font-size:11.5px; color:var(--ink-3)}
+  .tally-key b{color:var(--ink-2); font-weight:400}
+  .swatch{display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:7px; vertical-align:1px}
+
+  /* ---- sections ---- */
+  section{padding:60px 0 0; border-top:1px solid var(--rule); margin-top:60px}
+  section:first-of-type{border-top:none}
+  .lede{font-family:var(--mono); font-size:11px; letter-spacing:.16em; color:var(--accent);
+        text-transform:uppercase; margin-bottom:16px}
+  h2{font-size:clamp(24px,4vw,34px)}
+  h3{font-size:18px; margin-top:44px}
+  .body{display:flex; flex-direction:column; gap:26px; margin-top:26px; max-width:40em}
+  .body p{color:var(--ink-2)}
+  .body strong{color:var(--ink)}
+
+  .pull{font-family:var(--serif); font-size:clamp(19px,3vw,25px); line-height:1.8;
+        color:var(--ink); border-left:3px solid var(--accent); padding:4px 0 4px 24px; max-width:26em}
+
+  /* ---- tables ---- */
+  .tbox{overflow-x:auto; margin:32px 0 0; border:1px solid var(--rule);
+        border-radius:2px; background:var(--card)}
+  table{border-collapse:collapse; width:100%; font-size:14px; min-width:430px}
+  th,td{padding:12px 18px; text-align:left; border-bottom:1px solid var(--rule)}
+  thead th{font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase;
+           color:var(--ink-3); font-weight:400; background:var(--card-2); white-space:nowrap}
+  tbody tr:last-child td{border-bottom:none}
+  td.n,th.n{text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums}
+  .bad{color:var(--fail); font-weight:700}
+  .good{color:var(--live); font-weight:700}
+  caption{caption-side:bottom; padding:12px 18px; font-size:12.5px; color:var(--ink-3); text-align:left}
+
+  pre{margin:28px 0 0; padding:18px 20px; overflow-x:auto; background:var(--card-2);
+      border:1px solid var(--rule); border-radius:2px; font-family:var(--mono);
+      font-size:12.5px; line-height:1.85; color:var(--ink-2)}
+
+  .note{margin-top:30px; padding:20px 24px; background:var(--card); border:1px solid var(--rule);
+        border-left:3px solid var(--fail); border-radius:2px; font-size:14.5px;
+        color:var(--ink-2); line-height:1.9; max-width:40em}
+  .note b{color:var(--ink)}
+
+  ol.steps{margin:28px 0 0; padding:0; list-style:none; counter-reset:s;
+           display:flex; flex-direction:column; gap:0; border:1px solid var(--rule);
+           border-radius:2px; overflow:hidden; max-width:40em}
+  ol.steps li{counter-increment:s; background:var(--card); padding:16px 22px 16px 60px;
+              position:relative; font-size:14.5px; color:var(--ink-2); line-height:1.85}
+  ol.steps li+li{border-top:1px solid var(--rule)}
+  ol.steps li::before{content:counter(s); position:absolute; left:22px; top:16px;
+                      font-family:var(--mono); font-size:13px; color:var(--accent); font-weight:700}
+  ol.steps li b{color:var(--ink)}
+
+  footer{margin-top:72px; padding-top:34px; border-top:2px solid var(--ink);
+         font-size:13.5px; color:var(--ink-3); line-height:1.9; max-width:40em}
+
+  @media (max-width:640px){
+    #dots{grid-template-columns:repeat(24,1fr); gap:4px}
+    body{font-size:15.5px; line-height:1.95}
+  }
+  :focus-visible{outline:2px solid var(--accent); outline-offset:3px}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="kicker">検証記録 · 暗号資産アルゴリズム取引</div>
+  <h1>324回の失敗</h1>
+  <p class="sub">半年かけて324通り検証しました。採用できたのは1つです。<br>
+  これは、残り323の記録です。</p>
+
+  <div class="tally">
+    <div id="dots" aria-label="324個の試行のうち1個だけが採用された"></div>
+    <div class="tally-key">
+      <span><span class="swatch" style="background:var(--rule-2);opacity:.55"></span><b>323 — 不採用</b></span>
+      <span><span class="swatch" style="background:var(--live)"></span><b>1 — 生き残り</b></span>
+      <span>採用率 <b>0.31%</b></span>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="lede">なぜ失敗を書くのか</div>
+  <h2>失敗の理由の方が、再利用できる</h2>
+  <div class="body">
+    <p>「このパラメータで勝てました」は、他人には使えません。相場が変われば消えます。</p>
+    <p>けれど<strong>「この検証方法だと自分を騙します」は、誰にでも、いつでも使えます。</strong>
+    この記事に書くのはそちらです。</p>
+    <p>書いてあるのは5つ。短期売買が算数で否定される話、使っていたデータが壊れていた話、
+    強化学習が単純ルールに2回負けた話、92年分のデータで見たトレンドフォローの正体、
+    そして自分を騙さないための作法です。</p>
+  </div>
+</section>
+
+<section>
+  <div class="lede">01 — コストの算数</div>
+  <h2>1分足で勝てない理由は、コードを書く前に分かる</h2>
+  <div class="body">
+    <p>最初にやろうとしたのは、強化学習による1分足〜15分足のスキャルピングでした。
+    学習を回す前に、ある計算をして手が止まりました。</p>
+    <p><strong>損益分岐Sharpe</strong>——コストを払った上でプラスにするには、
+    コスト前でどれだけの精度が必要か。片道2.5bp、年率ボラ60%で計算するとこうなります。</p>
+  </div>
+
+  <div class="tbox">
+    <table>
+      <thead><tr><th>判断間隔</th><th class="n">必要なグロスSharpe</th></tr></thead>
+      <tbody>
+        <tr><td>5分</td><td class="n bad">106</td></tr>
+        <tr><td>15分</td><td class="n bad">35</td></tr>
+        <tr><td>60分</td><td class="n">8.9</td></tr>
+        <tr><td>240分</td><td class="n">2.2</td></tr>
+        <tr><td>1440分（日次）</td><td class="n good">0.7</td></tr>
+      </tbody>
+      <caption>片道2.5bp・年率ボラ60%・毎回建玉を入れ替える前提</caption>
+    </table>
+  </div>
+
+  <div class="body">
+    <p class="pull">Sharpe 106 は存在しません。世界最高のヘッジファンドでも 3〜4 です。</p>
+    <p>実際に測っても同じでした。1分足のOHLCVから作れる特徴量の予測力（IC）は 0.01〜0.02 で、
+    損益分岐に必要な水準の <strong>1/2〜1/30</strong> しかありません。</p>
+    <p>決定的だったのはこれです。<strong>取引コストを完全にゼロにしても、
+    2.1年のアウトオブサンプルで Sharpe +0.11。</strong>
+    コストを消しても儲からない。損失の直接原因はコストですが、
+    根本原因は「1分足に情報が無い」ことでした。</p>
+  </div>
+</section>
+
+<section>
+  <div class="lede">02 — データ</div>
+  <h2>使っていた公開データが、壊れていた</h2>
+  <div class="body">
+    <p>このプロジェクトで一番大きな学びです。</p>
+    <p>大手取引所の公開ヒストリカルデータ（2012年〜、1分足）で数か月検証していました。
+    別ソースを追加したときに、おかしなことに気づきます。</p>
+    <p>価格の水準は他ソースと <strong>±1bp</strong> で一致。ボラも <strong>±2%</strong> で一致。
+    欠損なし、重複なし、統計量もどこを見ても正常。</p>
+    <p class="pull">しかし、時間足リターンの相関がほぼゼロでした。</p>
+    <p>同じBTCの、同じ時刻の1時間リターンが、2つのソースで無相関。
+    片方は「その時刻に何が起きたか」を記録していませんでした。
+    <strong>価格の分布は正しいのに、時刻と値動きの対応が壊れていた</strong>のです。</p>
+  </div>
+
+  <div class="note">
+    <b>この破損が厄介なのは、標準的なチェックを全部すり抜けるからです。</b><br>
+    欠損チェック → 通る。重複チェック → 通る。価格水準の検算 → 通る。ボラの検算 → 通る。
+    バックテストを回す → 「それらしい」結果が出る。<br>
+    そして短期の予測力の測定結果が、まるごと無意味になっていました。
+  </div>
+
+  <div class="body">
+    <h3>検出方法は単純です</h3>
+    <p><strong>同じ資産の、独立した2つのソースを突き合わせる。</strong>それだけです。
+    健全なら時間足リターンの相関は 0.99 以上。0.9 を下回ったら疑ってください。</p>
+  </div>
+
+  <pre>a = load("source_a.parquet").resample("1h").last()
+b = load("source_b.parquet").resample("1h").last()
+ret_a = np.log(a["close"]).diff()
+ret_b = np.log(b["close"]).diff()
+print(ret_a.corr(ret_b))   # 0.99以上なら正常、0.9未満なら破損を疑う</pre>
+
+  <div class="body">
+    <p>さらに<strong>年ごとに見てください。</strong>全期間で0.95でも、特定の年だけ0.3ということがあります。
+    部分的な破損が一番危険です。</p>
+    <p>正常なデータで測り直したところ、予測力は当初の報告より2〜3倍高く出ましたが、
+    損益分岐には遠く及ばず結論は変わりませんでした。
+    それでも、気づかなければ嘘の数字を信じ続けていたことになります。</p>
+  </div>
+</section>
+
+<section>
+  <div class="lede">03 — 強化学習</div>
+  <h2>PPOは、小学生でも書けるルールに2回負けた</h2>
+  <div class="body">
+    <p>このプロジェクトは元々「強化学習でトレード戦略を作る」ものでした。
+    GAE、方策と価値のトランク分離、一様混合による探索フロア、適応的エントロピー目標、
+    コストカリキュラム、行動クローニングによるウォームスタート——全部実装しました。</p>
+    <p>技術的にはちゃんと動き、学習も収束しました。そして負けました。</p>
+  </div>
+
+  <div class="tbox">
+    <table>
+      <thead><tr><th>手法</th><th class="n">Sharpe（4フォールド平均）</th></tr></thead>
+      <tbody>
+        <tr><td>PPO（強化学習）</td><td class="n bad">+0.14</td></tr>
+        <tr><td>5/14/30/60日モメンタムの平均</td><td class="n good">+0.67</td></tr>
+      </tbody>
+      <caption>RLが勝ったのは4フォールド中1つだけ。データ破損を疑い正常データで再検証したが、結果は同じだった</caption>
+    </table>
+  </div>
+
+  <div class="body">
+    <h3>なぜ負けるのか</h3>
+    <p><strong>シグナルが1本の特徴量の単調関数だからです。</strong>
+    「モメンタムが強いほど大きく建てる」という関係が正しいなら、それをそのまま書いたルールが最適です。
+    RLはその関数を<strong>データから推定し直す</strong>ので、推定誤差と分散を足すだけになります。</p>
+    <p>RLが効くのは、状態空間が複雑で、報酬が遅延し、行動が環境を変える問題です。
+    「価格系列を見て建玉を決める」は、そのどれでもありません。</p>
+    <p class="pull">RLを使う前に、まず単純なルールを書いて比べてください。それが超えられないなら、RLは要りません。</p>
+  </div>
+</section>
+
+<section>
+  <div class="lede">04 — 92年のデータ</div>
+  <h2>トレンドフォローは、儲ける道具ではなかった</h2>
+  <div class="body">
+    <p>暗号資産のデータは長くても6年です。6年でSharpe 1.0が出ても、
+    幸運なのか普遍的な性質なのか区別できません。</p>
+    <p>そこで <strong>1926年からの92年分</strong>で同じ原理を検証しました。
+    大恐慌、第二次大戦、70年代インフレ、ブラックマンデー、ITバブル、リーマンを全部含みます。</p>
+    <h3>92年間、一度も死ななかった</h3>
+  </div>
+
+  <div class="tbox">
+    <table>
+      <thead><tr><th>期間</th><th class="n">Sharpe（12か月モメンタム・株式市場）</th></tr></thead>
+      <tbody>
+        <tr><td>1926 – 1956</td><td class="n good">+0.68</td></tr>
+        <tr><td>1957 – 1987</td><td class="n good">+0.10</td></tr>
+        <tr><td>1988 – 2018</td><td class="n good">+0.62</td></tr>
+      </tbody>
+      <caption>3つの独立した時代すべてでプラス。符号が反転する時代がない</caption>
+    </table>
+  </div>
+
+  <div class="body"><h3>でも、Sharpeでは買い持ちに勝てない</h3></div>
+
+  <div class="tbox">
+    <table>
+      <thead><tr><th>系列</th><th class="n">買い持ち</th><th class="n">トレンド</th></tr></thead>
+      <tbody>
+        <tr><td>株式市場</td><td class="n good">0.49</td><td class="n">0.46</td></tr>
+        <tr><td>バリュー</td><td class="n good">0.36</td><td class="n">0.30</td></tr>
+        <tr><td>高格付社債</td><td class="n good">1.08</td><td class="n">0.74</td></tr>
+      </tbody>
+      <caption>5系列中4系列で、トレンドは買い持ちに負けるか同等だった</caption>
+    </table>
+  </div>
+
+  <div class="body">
+    <p>「トレンドフォローは儲かる魔法」ではありません。少なくとも単体では、
+    ただボラ調整して持っているのと大差ない。</p>
+    <h3>では何が違うのか</h3>
+    <p>同じSharpeなのに<strong>最大ドローダウンが2〜3割小さく、歪度が改善します。</strong>
+    ある系列では歪度が <strong>−1.63 → +0.86</strong> と符号が反転しました。
+    「たまに大きく損する」形が「たまに大きく勝つ」形に変わります。</p>
+    <p>そして決定的なのがこれです。</p>
+  </div>
+
+  <div class="tbox">
+    <table>
+      <thead><tr><th>局面</th><th class="n">買い持ち</th><th class="n">トレンド</th></tr></thead>
+      <tbody>
+        <tr><td>大恐慌 1929–1932</td><td class="n bad">−48.9%</td><td class="n good">+9.0%</td></tr>
+        <tr><td>第二次大戦 1939–1945</td><td class="n">+133.3%</td><td class="n">+109.9%</td></tr>
+        <tr><td>70年代インフレ 1973–74</td><td class="n bad">−52.7%</td><td class="n good">+60.5%</td></tr>
+        <tr><td>ブラックマンデー 1987</td><td class="n">−4.7%</td><td class="n">−3.2%</td></tr>
+        <tr><td>ITバブル崩壊 2000–02</td><td class="n bad">−37.8%</td><td class="n good">+0.8%</td></tr>
+        <tr><td>リーマン 2008–09</td><td class="n bad">−40.5%</td><td class="n good">+27.5%</td></tr>
+      </tbody>
+      <caption>株式市場ファクター（Fama-French 月次、1926–2018）。ボラ目標15%で揃えて比較</caption>
+    </table>
+  </div>
+
+  <div class="body">
+    <p class="pull">92年間の4大暴落すべてで、買い持ちが38〜53%失ったとき、トレンドはプラスだった。</p>
+    <p>上げ相場では買い持ちに少し劣ります。その代わり、<strong>暴落で逆を向きます。</strong></p>
+    <p><strong>これは「儲ける道具」ではなく「生き残る道具」です。</strong>
+    期待リターンを上げるのではなく、リターンの<strong>分布の形を変える</strong>のが仕事です。
+    左の裾を切って、その代金を上げ相場の一部で払っています。</p>
+    <h3>そして、暗号資産で価値が最大になる</h3>
+  </div>
+
+  <div class="tbox">
+    <table>
+      <thead><tr><th>資産クラス</th><th class="n">買い持ち Sharpe</th><th class="n">買い持ち 最大DD</th><th class="n">トレンド Sharpe</th></tr></thead>
+      <tbody>
+        <tr><td>伝統的資産（株式）</td><td class="n">0.49</td><td class="n">−66%</td><td class="n">0.46</td></tr>
+        <tr><td>暗号資産</td><td class="n">0.31 – 0.74</td><td class="n bad">−70 〜 −96%</td><td class="n good">1.13</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="body">
+    <p>伝統的資産では買い持ちとトレンドで大差ありません。
+    <strong>暗号資産が特別なのは、買い持ちの崩れ方が壊滅的だからです。</strong>
+    ある銘柄は92%減、別の銘柄は96%減を経験しています。100万円が4万円になる区間を通ります。</p>
+    <p>だから同じトレンド則の恩恵が、桁違いに大きくなります。</p>
+  </div>
+</section>
+
+<section>
+  <div class="lede">05 — 作法</div>
+  <h2>自分を騙さないための6つ</h2>
+  <div class="body">
+    <p>324試行で身についた作法です。全部、痛い目を見て覚えました。</p>
+
+    <h3>ホールドアウトを封印し、使うのは1回だけ</h3>
+    <p>検証を始める前に直近期間を完全に隔離し、設計中は絶対に見ない。全部固まってから1回だけ当てる。
+    <strong>結果が悪くても、そこでパラメータを触ってはいけません。</strong>
+    触った瞬間、その期間はもう検証区間ではなくなります。</p>
+
+    <h3>独立した2つ以上の「時代」で検証する</h3>
+    <p>これが一番効きました。実例を出します。BTCのトレンドを他銘柄に当てる案の結果です。</p>
+  </div>
+
+  <div class="tbox">
+    <table>
+      <thead><tr><th>BTCの重み</th><th class="n">時代B（2020–2024）</th><th class="n">時代A（2017–2020）</th></tr></thead>
+      <tbody>
+        <tr><td>0.00（現行）</td><td class="n">1.779</td><td class="n">1.723</td></tr>
+        <tr><td>0.30</td><td class="n good">1.870</td><td class="n bad">1.528</td></tr>
+      </tbody>
+      <caption>時代Bだけ見れば +0.09 の改善。時代Aでは −0.20 の悪化。方向が逆</caption>
+    </table>
+  </div>
+
+  <div class="body">
+    <p><strong>時代Bのデータしか持っていなければ、確実に採用していました。</strong></p>
+    <p>同じパターンを何度も見ました。出来高で条件づけする案は12通り試して、
+    <strong>両方の時代で同符号の改善が1つもありませんでした。</strong>
+    片方で改善する設定は、必ずもう片方で悪化します。</p>
+    <p class="pull">物語はいくらでも作れます。「出来高が増える局面ほどトレンドが効く」——
+    もっともらしいですよね。でも再現しません。</p>
+
+    <h3>試行回数を正直に数える</h3>
+    <p>Deflated Sharpe Ratio は「N回試して最良を選んだ」という選択バイアスを補正します。
+    <strong>このNを正直に数えてください。</strong>失敗した試行、途中でやめた試行、
+    パラメータをちょっと変えただけの試行、全部です。</p>
+    <p>私のプロジェクトは324試行で、Deflated Sharpe は <strong>0.028</strong>。
+    採用ゲート（0.95）には全く届きません。<strong>それを隠さずに書いています。</strong></p>
+
+    <h3>パラメータを格子で全数検査する</h3>
+    <p>「そのパラメータは当てはめじゃないの?」への答え方です。
+    探索で選んだ数字3つの周辺を、格子状に64通り全部回しました。</p>
+    <p><strong>64構成すべてが両方の時代で勝ち</strong>（最悪でもSharpe 1.37）、
+    現行値の順位は <strong>64中21位（上位31%）</strong>でした。</p>
+    <p>当てはめていたなら上位数%に来ているはずです。中位だったということは、
+    選択の余地が実質的に無かった——どれを選んでも勝つ——ということです。
+    逆に、格子の中で自分の設定だけが突出しているなら、それは当てはめを疑うサインです。</p>
+
+    <h3>「改善幅」の基準を先に決める</h3>
+    <p>Sharpeの推定誤差は5年のデータで <strong>±0.4</strong> 程度あります。
+    つまり <strong>+0.04の改善には何の意味もありません。</strong>
+    私は「両方の時代で+0.15以上」を採用条件として先に固定し、
+    何度も +0.10前後の惜しい候補を落としました。</p>
+    <p><strong>基準を後から緩めたら、それまでの全部が無意味になります。</strong></p>
+  </div>
+</section>
+
+<section>
+  <div class="lede">結び</div>
+  <h2>残ったのは、戦略ではなかった</h2>
+  <div class="body">
+    <p>324試行のうち生き残ったのは1つ。
+    <strong>5/14/30/60日モメンタムの平均を、複数銘柄に、両建てで、等リスク配分する。</strong>
+    それだけです。特別なことは何もしていません。</p>
+    <p>封印していた15か月（2025年1月〜2026年3月）の成績です。</p>
+  </div>
+
+  <div class="tbox">
+    <table>
+      <thead><tr><th></th><th class="n">戦略</th><th class="n">同じ5銘柄を買い持ち</th></tr></thead>
+      <tbody>
+        <tr><td>Sharpe</td><td class="n good">+1.06</td><td class="n">—</td></tr>
+        <tr><td>年率リターン</td><td class="n good">+19.0%</td><td class="n bad">−32.2%</td></tr>
+        <tr><td>最大ドローダウン</td><td class="n good">−8.5%</td><td class="n bad">−56.2%</td></tr>
+        <tr><td>月次勝率</td><td class="n">60%</td><td class="n">—</td></tr>
+        <tr><td>BTCとの相関</td><td class="n">−0.42</td><td class="n">1.00</td></tr>
+      </tbody>
+      <caption>当てたからではない。10月に全面ショートへ転じたから</caption>
+    </table>
+  </div>
+
+  <div class="note">
+    <b>正直に書いておくべきこと。</b><br>
+    ライブ実績はゼロ。全部シミュレーションです。Deflated Sharpe は 0.028 で統計的な確証には期間が足りません。
+    実運用の期待値は Sharpe 0.5〜0.8 と見るべきです（未知の摩擦は必ずマイナスに出ます）。
+    中身は公知のファクターで、独自性はありません。
+  </div>
+
+  <div class="body">
+    <h3>一番の収穫</h3>
+    <p>半年かけて本当に手に入れたのは、戦略ではありませんでした。
+    <strong>「自分が何を知らないか」を数字で言えるようになったこと</strong>です。</p>
+  </div>
+
+  <ol class="steps">
+    <li><b>1分足では勝てない</b> — 損益分岐Sharpe 106</li>
+    <li><b>RLは要らない</b> — 単純ルールに 0.14 vs 0.67</li>
+    <li><b>データを疑え</b> — 独立ソース相関がゼロだった</li>
+    <li><b>銘柄を増やしても限界がある</b> — 有効独立ベット数 2.0</li>
+    <li><b>トレンドは儲ける道具ではない</b> — 92年で買い持ちと同等、ただし暴落で逆を向く</li>
+  </ol>
+
+  <div class="body">
+    <p>この5つを知らないまま実弾を入れていたら、確実に溶かしていました。
+    <strong>323の失敗は、その意味では全部必要でした。</strong></p>
+  </div>
+
+  <footer>
+    <p>バックテストで良い数字を出すのは簡単です。難しいのは、その数字を信じないことです。</p>
+  </footer>
+</section>
+
+</div>
+
+<script>
+  (function(){
+    var g = document.getElementById('dots');
+    if (!g) return;
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < 324; i++) {
+      var d = document.createElement('i');
+      if (i === 201) d.className = 'live';
+      frag.appendChild(d);
+    }
+    g.appendChild(frag);
+  })();
+</script>
