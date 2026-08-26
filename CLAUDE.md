@@ -20,7 +20,7 @@ GMO コインのレバレッジ取引（5 銘柄）向けの、複数銘柄ト�
 1. **ホールドアウト（2025-01-01 以降）でパラメータを調整しない。** 既に 1 回使った
 2. **成績が悪くてもパラメータを触らない。** 変えるなら、理由と変更前の数字を
    `docs/strategy_search.md` に記録してから変える
-3. **新しい試行は必ず記録する。** 現在 299 試行。Deflated Sharpe はこの数で補正している
+3. **新しい試行は必ず記録する。** 現在 324 試行。Deflated Sharpe はこの数で補正している
 4. **バックテストとライブでサイジングを二重実装しない。**
    両者は `portfolio.compute_exposures()` を共有し、テストで固定している
 5. **新しい価格データを入れたら必ず `scripts/verify_data.py` を通す。**
@@ -54,7 +54,7 @@ python data/handoff/verify_bundle.py --repo . # 基準データと基準の数�
 | `scripts/gmo_validate.py` | 本番設定を流して GO/NO-GO まで出す検証スクリプト |
 | `scripts/fetch_data.py` | GMO Public API からデータ取得 |
 | `scripts/verify_data.py` | データ健全性の検証 |
-| `docs/strategy_search.md` | 全 60 節・299 試行の記録。迷ったらここ |
+| `docs/strategy_search.md` | 全 65 節・324 試行の記録。迷ったらここ |
 
 ## 既知の未対応
 
