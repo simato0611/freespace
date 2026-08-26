@@ -60,7 +60,7 @@ python data/handoff/verify_bundle.py --repo .
 | 主張された成績が出るか | `python scripts/gmo_validate.py --dir data/handoff/prices/perp_1h --symbols BTC ETH XRP BNB DOGE` |
 | ホールドアウトが本当に分離されているか | `gmo_validate.py` の `--holdout-start`（既定 2025-01-01）で区間を切っている。開発期間 1.696 に対しホールドアウト 1.059 と落ちるのは、分離が効いている証拠 |
 | データが壊れていないか | `python scripts/verify_data.py --a <検証したいデータ> --b data/handoff/prices/verify_sources/BTCUSDT_huobi_1h.parquet` |
-| 試行回数の申告が正しいか | `docs/strategy_search.md` に全 47 節・177 試行が残っている |
+| 試行回数の申告が正しいか | `docs/strategy_search.md` に全 51 節・245 試行が残っている |
 
 **疑ってよい。むしろ疑ってほしい。**このプロジェクトで唯一守ってきたのは
 「都合の悪い結果も残す」ことなので、記録と食い違う点が見つかったらそれが正しい。
